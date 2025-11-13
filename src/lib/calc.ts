@@ -1,39 +1,139 @@
-export const INSTRUMENTS: Record<string, { valuePerUnitUSD: number; lotDenominator: number }> = {
-    "xau/usd": { valuePerUnitUSD: 1, lotDenominator: 100 },
-    "xauusd": { valuePerUnitUSD: 1, lotDenominator: 100 },
-    "btc/usd": { valuePerUnitUSD: 1, lotDenominator: 1 },
-    "btcusd": { valuePerUnitUSD: 1, lotDenominator: 1 },
-    "eur/usd": { valuePerUnitUSD: 1, lotDenominator: 100000 },
-    "gbp/usd": { valuePerUnitUSD: 1, lotDenominator: 100000 },
+import { TradingSignal, PositionDetails } from '../types/trading';
+
+export interface InstrumentMetadata {
+  lotSize: number; // Units per lot
+  pipValue?: number; // For FX pairs
+}
+
+// Instrument metadata mapping
+const INSTRUMENT_METADATA: Record<string, InstrumentMetadata> = {
+  // Gold
+  'XAUUSD': { lotSize: 100 }, // 1 lot = 100 oz
+  'GOLD': { lotSize: 100 },
+  
+  // Major FX pairs (1 lot = 100,000 units)
+  'EURUSD': { lotSize: 100000, pipValue: 0.0001 },
+  'GBPUSD': { lotSize: 100000, pipValue: 0.0001 },
+  'USDJPY': { lotSize: 100000, pipValue: 0.01 },
+  'AUDUSD': { lotSize: 100000, pipValue: 0.0001 },
+  'USDCAD': { lotSize: 100000, pipValue: 0.0001 },
+  'USDCHF': { lotSize: 100000, pipValue: 0.0001 },
+  'NZDUSD': { lotSize: 100000, pipValue: 0.0001 },
+  
+  // Crypto (1 lot = 1 unit)
+  'BTCUSD': { lotSize: 1 },
+  'ETHUSD': { lotSize: 1 },
+  'BTCUSDT': { lotSize: 1 },
+  'ETHUSDT': { lotSize: 1 },
+};
+
+/**
+ * Get instrument metadata for a symbol
+ */
+export function getInstrumentMetadata(symbol: string): InstrumentMetadata {
+  const upperSymbol = symbol.toUpperCase();
+  return INSTRUMENT_METADATA[upperSymbol] || { lotSize: 1 }; // Default to 1 for unknown instruments
+}
+
+/**
+ * Calculate recommended lot size based on risk
+ */
+export function calculateLotSize(
+  accountSize: number,
+  riskPercent: number,
+  entry: number,
+  stopLoss: number,
+  symbol: string
+): { lots: number; units: number } {
+  const amountRisking = (accountSize * riskPercent) / 100;
+  const metadata = getInstrumentMetadata(symbol);
+  const riskPerUnit = Math.abs(entry - stopLoss);
+  
+  if (riskPerUnit === 0) {
+    return { lots: 0, units: 0 };
+  }
+  
+  // Calculate units based on risk
+  const units = amountRisking / riskPerUnit;
+  
+  // Convert to lots
+  const lots = units / metadata.lotSize;
+  
+  return {
+    lots: Math.max(0, Math.round(lots * 100) / 100), // Round to 2 decimal places
+    units: Math.max(0, Math.round(units * 100) / 100),
   };
+}
+
+/**
+ * Calculate position details from signal
+ */
+export function calculatePositionDetails(
+  signal: TradingSignal,
+  accountSize: number,
+  riskPercent: number
+): PositionDetails {
+  const amountRisking = (accountSize * riskPercent) / 100;
+  const { lots, units } = calculateLotSize(
+    accountSize,
+    riskPercent,
+    signal.entry,
+    signal.stopLoss,
+    signal.symbol
+  );
   
-  export function normalizeSymbol(s: string) { return s.trim().toLowerCase(); }
-  export function instrumentMeta(symbol: string) {
-    const key = normalizeSymbol(symbol);
-    return INSTRUMENTS[key] ?? { valuePerUnitUSD: 1, lotDenominator: 100000 };
-  }
+  // Calculate profit at TP1 and TP2
+  const riskPerUnit = Math.abs(signal.entry - signal.stopLoss);
+  const profitAtTP1 = units * Math.abs(signal.takeProfit1 - signal.entry);
+  const profitAtTP2 = units * Math.abs(signal.takeProfit2 - signal.entry);
   
-  export function calcUnits({ accountSize, riskPercent, entryPrice, stopLoss, symbol }:{ accountSize:number; riskPercent:number; entryPrice:number; stopLoss:number; symbol:string; }){
-    const { valuePerUnitUSD } = instrumentMeta(symbol);
-    const riskAmountUSD = accountSize * (riskPercent / 100);
-    const stopDistance = Math.abs(entryPrice - stopLoss);
-    const pnlPerUnitAtSL = stopDistance * valuePerUnitUSD;
-    const units = pnlPerUnitAtSL > 0 ? riskAmountUSD / pnlPerUnitAtSL : 0;
-    return { units, riskAmountUSD };
-  }
+  // Calculate risk:reward ratios
+  const riskRewardTP1 = riskPerUnit > 0 ? Math.abs(signal.takeProfit1 - signal.entry) / riskPerUnit : 0;
+  const riskRewardTP2 = riskPerUnit > 0 ? Math.abs(signal.takeProfit2 - signal.entry) / riskPerUnit : 0;
   
-  export function toLots(units:number, symbol:string){
-    const { lotDenominator } = instrumentMeta(symbol);
-    return units / lotDenominator;
-  }
+  return {
+    accountSize,
+    riskPerTrade: riskPercent,
+    amountRisking,
+    profitAtTP1,
+    profitAtTP2,
+    riskRewardTP1,
+    riskRewardTP2,
+    recommendedLots: lots,
+    recommendedUnits: units,
+  };
+}
+
+/**
+ * Generate a mock signal for testing
+ */
+export function generateMockSignal(
+  symbol: string,
+  currentPrice: number
+): TradingSignal {
+  const isBuy = Math.random() > 0.5;
+  const volatility = currentPrice * 0.02; // 2% volatility
   
-  export function calcDerived({ direction, entryPrice, stopLoss, tp1, tp2, units, symbol, riskAmountUSD }:{ direction:"buy"|"sell"; entryPrice:number; stopLoss:number; tp1:number; tp2:number; units:number; symbol:string; riskAmountUSD:number; }){
-    const { valuePerUnitUSD } = instrumentMeta(symbol);
-    const priceMove = (target:number)=>Math.abs(target - entryPrice);
-    const profitUSD = (target:number)=> priceMove(target) * valuePerUnitUSD * units;
-    const profitTP1USD = profitUSD(tp1);
-    const profitTP2USD = profitUSD(tp2);
-    const rrTP1 = riskAmountUSD > 0 ? profitTP1USD / riskAmountUSD : 0;
-    const rrTP2 = riskAmountUSD > 0 ? profitTP2USD / riskAmountUSD : 0;
-    return { profitTP1USD, profitTP2USD, rrTP1, rrTP2 };
-  }
+  const entry = currentPrice;
+  const stopLoss = isBuy 
+    ? currentPrice - volatility * 0.5
+    : currentPrice + volatility * 0.5;
+  const takeProfit1 = isBuy
+    ? currentPrice + volatility
+    : currentPrice - volatility;
+  const takeProfit2 = isBuy
+    ? currentPrice + volatility * 1.5
+    : currentPrice - volatility * 1.5;
+  
+  return {
+    symbol: symbol.toUpperCase(),
+    direction: isBuy ? 'BUY' : 'SELL',
+    orderType: 'MARKET',
+    entry,
+    stopLoss,
+    takeProfit1,
+    takeProfit2,
+    currentPrice,
+  };
+}
+

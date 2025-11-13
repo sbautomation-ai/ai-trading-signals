@@ -23,31 +23,9 @@ dist-ssr
 *.sln
 *.sw?
 
+# Environment variables
 .env
-dist
-.netlify
-
-
-.env
-.netlify
-dist
-node_modules
-
-
-.env
-.netlify
-dist
-node_modules
-
-
-.env
-.netlify
-dist
-node_modules
-
-
-.env
-.netlify
-dist
-node_modules
+.env.local
+.env.production.local
+.env.development.local
 

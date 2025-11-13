@@ -1,73 +1,94 @@
-# React + TypeScript + Vite
+# On-Demand Trading Signals
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A modern web application for generating AI-powered trading signals with intelligent risk management calculations.
 
-Currently, two official plugins are available:
+## Features
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- **AI-Powered Signal Generation**: Get instant trading signals for various instruments
+- **Risk Management**: Automatic calculation of position sizing based on account size and risk percentage
+- **Multiple Instruments**: Support for Forex, Gold (XAUUSD), and Cryptocurrency pairs
+- **Real-Time Price Data**: Optional integration with Alpha Vantage API for live prices
+- **Comprehensive Position Details**: View recommended lot sizes, profit potential, and risk:reward ratios
 
-## React Compiler
+## Tech Stack
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- **Frontend**: React 18 + TypeScript + Vite
+- **Styling**: Tailwind CSS with dark theme
+- **Backend**: Netlify Functions
+- **API Integration**: Alpha Vantage (optional)
 
-## Expanding the ESLint configuration
+## Getting Started
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+### Prerequisites
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+- Node.js 18+ and npm
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+### Installation
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+1. Clone the repository
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
+
+3. (Optional) Set up Alpha Vantage API key:
+   - Get a free API key from [Alpha Vantage](https://www.alphavantage.co/support/#api-key)
+   - Create a `.env` file in the root directory:
+     ```
+     ALPHA_VANTAGE_KEY=your_api_key_here
+     ```
+
+### Development
+
+Run the development server:
+```bash
+npm run dev
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+The app will be available at `http://localhost:5173`
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+### Building
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+Build for production:
+```bash
+npm run build
 ```
+
+### Deployment
+
+This app is configured for Netlify deployment:
+
+1. Push your code to a Git repository
+2. Connect the repository to Netlify
+3. Set the `ALPHA_VANTAGE_KEY` environment variable in Netlify dashboard (optional)
+4. Deploy!
+
+The `netlify.toml` file is already configured with the correct settings.
+
+## Usage
+
+1. Enter a trading symbol (e.g., XAUUSD, EURUSD, BTCUSD)
+2. Specify your account size in USD
+3. Set your desired risk percentage per trade
+4. Click "Generate Signal" to get an AI-powered trading signal
+
+The signal will include:
+- Buy/Sell direction
+- Entry, Stop Loss, and Take Profit levels (TP1 and TP2)
+- Recommended lot size and units
+- Position details with profit potential and risk:reward ratios
+
+## Instrument Support
+
+- **Forex**: EURUSD, GBPUSD, USDJPY, AUDUSD, USDCAD, USDCHF, NZDUSD (1 lot = 100,000 units)
+- **Gold**: XAUUSD, GOLD (1 lot = 100 oz)
+- **Crypto**: BTCUSD, ETHUSD, BTCUSDT, ETHUSDT (1 lot = 1 unit)
+
+## Disclaimer
+
+⚠️ **This tool provides trading signals for informational purposes only and does not constitute financial advice. Trading involves substantial risk of loss. Past performance is not indicative of future results. Always conduct your own research and consult with a qualified financial advisor before making trading decisions.**
+
+## License
+
+MIT
+

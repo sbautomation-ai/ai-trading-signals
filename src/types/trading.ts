@@ -1,24 +1,34 @@
-export type OrderType = "market" | "limit";
-export type Direction = "buy" | "sell";
-
 export interface TradingSignal {
   symbol: string;
-  direction: Direction;
-  orderType: OrderType;
-  entryPrice: number;
+  direction: 'BUY' | 'SELL';
+  orderType: 'MARKET' | 'LIMIT';
+  entry: number;
   stopLoss: number;
   takeProfit1: number;
   takeProfit2: number;
-  timestamp: string;
-  accountSize: number;
-  riskPercent: number;
-  lotSize: number;   // standard lots where applicable
-  units: number;     // raw position size
-  notes?: string[];
-
-  riskAmountUSD: number;
-  profitTP1USD: number;
-  profitTP2USD: number;
-  rrTP1: number;
-  rrTP2: number;
+  currentPrice: number;
 }
+
+export interface PositionDetails {
+  accountSize: number;
+  riskPerTrade: number;
+  amountRisking: number;
+  profitAtTP1: number;
+  profitAtTP2: number;
+  riskRewardTP1: number;
+  riskRewardTP2: number;
+  recommendedLots: number;
+  recommendedUnits: number;
+}
+
+export interface SignalResponse {
+  signal: TradingSignal;
+  positionDetails: PositionDetails;
+}
+
+export interface SignalRequest {
+  symbol: string;
+  accountSize: number;
+  tradeRiskPercent: number;
+}
+
