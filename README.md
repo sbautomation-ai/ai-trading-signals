@@ -56,7 +56,42 @@ npm run build
 
 ### Deployment
 
-This app is configured for Netlify deployment:
+#### Option 1: GitHub Pages (Recommended for Frontend)
+
+This app is configured for automatic deployment to GitHub Pages:
+
+1. **Enable GitHub Pages:**
+   - Go to your repository on GitHub
+   - Click **Settings** → **Pages**
+   - Under "Source", select **GitHub Actions**
+   - Save the settings
+
+2. **Configure API URL (if using Netlify Functions):**
+   - Go to **Settings** → **Secrets and variables** → **Actions**
+   - Click **New repository secret**
+   - Name: `VITE_API_URL`
+   - Value: Your Netlify function URL (e.g., `https://your-site.netlify.app/.netlify/functions/generate-signal`)
+   - Click **Add secret**
+
+3. **Push to main branch:**
+   - The GitHub Actions workflow will automatically build and deploy
+   - Your site will be available at: `https://your-username.github.io/ai-trading-signals/`
+
+**Note:** If your repository name is different, update the `base` path in `vite.config.ts`.
+
+#### Option 2: Manual GitHub Pages Deployment
+
+You can also deploy manually using the npm script:
+
+```bash
+npm run deploy:gh-pages
+```
+
+This will build the app and push it to the `gh-pages` branch.
+
+#### Option 3: Netlify Deployment
+
+For full-stack deployment (including serverless functions):
 
 1. Push your code to a Git repository
 2. Connect the repository to Netlify
@@ -64,6 +99,8 @@ This app is configured for Netlify deployment:
 4. Deploy!
 
 The `netlify.toml` file is already configured with the correct settings.
+
+**Note:** GitHub Pages only serves static files, so if you deploy to GitHub Pages, you'll need to keep your Netlify Functions on Netlify and configure the `VITE_API_URL` secret to point to your Netlify function URL.
 
 ## Usage
 

@@ -19,7 +19,10 @@ function App() {
         tradeRiskPercent,
       };
 
-      const response = await fetch('/.netlify/functions/generate-signal', {
+      // Use environment variable for API URL, fallback to Netlify function path
+      const apiUrl = import.meta.env.VITE_API_URL || '/.netlify/functions/generate-signal';
+      
+      const response = await fetch(apiUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

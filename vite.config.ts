@@ -5,6 +5,7 @@ import path from 'path'
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [react()],
+  base: process.env.GITHUB_PAGES === 'true' ? '/ai-trading-signals/' : '/',
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
