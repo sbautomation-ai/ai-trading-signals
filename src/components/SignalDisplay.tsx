@@ -40,17 +40,6 @@ export function SignalDisplay({ signalData }: SignalDisplayProps) {
     }).format(value);
   };
 
-  const formatPrice = (value: number) => {
-    // Format with appropriate decimal places
-    if (value >= 1000) {
-      return value.toFixed(2);
-    } else if (value >= 1) {
-      return value.toFixed(5);
-    } else {
-      return value.toFixed(5);
-    }
-  };
-
   const formatCurrencyPrice = (value: number) => {
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
