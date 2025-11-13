@@ -14,7 +14,7 @@ A modern web application for generating AI-powered trading signals with intellig
 
 - **Frontend**: React 18 + TypeScript + Vite
 - **Styling**: Tailwind CSS with dark theme
-- **Backend**: Netlify Functions
+- **Backend**: Serverless Functions (Vercel/AWS Lambda/Cloudflare Workers)
 - **API Integration**: Alpha Vantage (optional)
 
 ## Getting Started
@@ -66,11 +66,12 @@ This app is configured for automatic deployment to GitHub Pages:
    - Under "Source", select **GitHub Actions**
    - Save the settings
 
-2. **Configure API URL (if using Netlify Functions):**
+2. **Configure API URL:**
+   - Deploy the backend function to Vercel (see Backend Deployment section below)
    - Go to **Settings** → **Secrets and variables** → **Actions**
    - Click **New repository secret**
    - Name: `VITE_API_URL`
-   - Value: Your Netlify function URL (e.g., `https://your-site.netlify.app/.netlify/functions/generate-signal`)
+   - Value: Your backend API URL (e.g., `https://your-app.vercel.app/api/generate-signal`)
    - Click **Add secret**
 
 3. **Push to main branch:**
@@ -89,18 +90,23 @@ npm run deploy:gh-pages
 
 This will build the app and push it to the `gh-pages` branch.
 
-#### Option 3: Netlify Deployment
+#### Backend Deployment (Required)
 
-For full-stack deployment (including serverless functions):
+The backend function needs to be deployed separately. Recommended options:
 
-1. Push your code to a Git repository
-2. Connect the repository to Netlify
-3. Set the `ALPHA_VANTAGE_KEY` environment variable in Netlify dashboard (optional)
-4. Deploy!
+**Option A: Vercel (Recommended - Free & Easy)**
 
-The `netlify.toml` file is already configured with the correct settings.
+1. Install Vercel CLI: `npm i -g vercel`
+2. Run `vercel` in the project root
+3. Follow the prompts to deploy
+4. Set `ALPHA_VANTAGE_KEY` environment variable in Vercel dashboard (optional)
+5. Your API will be available at: `https://your-app.vercel.app/api/generate-signal`
 
-**Note:** GitHub Pages only serves static files, so if you deploy to GitHub Pages, you'll need to keep your Netlify Functions on Netlify and configure the `VITE_API_URL` secret to point to your Netlify function URL.
+**Option B: AWS Lambda / Cloudflare Workers / Other**
+
+The function in `api/generate-signal.ts` can be adapted for any serverless platform. See the function file for platform-specific notes.
+
+**Note:** After deploying the backend, update the `VITE_API_URL` secret in GitHub Actions to point to your backend URL.
 
 ## Usage
 

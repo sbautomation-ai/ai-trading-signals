@@ -19,8 +19,15 @@ function App() {
         tradeRiskPercent,
       };
 
-      // Use environment variable for API URL, fallback to Netlify function path
-      const apiUrl = import.meta.env.VITE_API_URL || '/.netlify/functions/generate-signal';
+      // Use environment variable for API URL
+      // On GitHub Pages, VITE_API_URL must be set as a secret pointing to your backend API
+      const apiUrl = import.meta.env.VITE_API_URL;
+      
+      if (!apiUrl) {
+        throw new Error('API URL not configured. Please set VITE_API_URL environment variable.');
+      }
+      
+      console.log('Fetching from:', apiUrl); // Debug log
       
       const response = await fetch(apiUrl, {
         method: 'POST',
@@ -40,7 +47,13 @@ function App() {
       data.signal.symbol = originalSymbolFormat.toLowerCase();
       setSignalData(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred');
+      const errorMessage = err instanceof Error ? err.message : 'An error occurred';
+      // Provide more helpful error message if API URL might be wrong
+      if (errorMessage.includes('Failed to fetch') || errorMessage.includes('NetworkError')) {
+        setError(`Failed to connect to API. Please check that VITE_API_URL is configured correctly. Error: ${errorMessage}`);
+      } else {
+        setError(errorMessage);
+      }
       setSignalData(null);
     } finally {
       setIsLoading(false);

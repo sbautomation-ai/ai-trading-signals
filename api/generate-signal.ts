@@ -1,5 +1,5 @@
-// Netlify Function for generating trading signals
-// Note: This function includes calculation logic inline for Netlify compatibility
+// Serverless function for generating trading signals
+// Compatible with Vercel, AWS Lambda, Cloudflare Workers, or any serverless platform
 
 interface TradingSignal {
   symbol: string;
@@ -232,55 +232,34 @@ function generateSignal(
   };
 }
 
-export const handler = async (event: any) => {
+// Vercel-compatible handler
+export default async function handler(req: any, res: any) {
   // Handle CORS
-  if (event.httpMethod === 'OPTIONS') {
-    return {
-      statusCode: 200,
-      headers: {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Headers': 'Content-Type',
-        'Access-Control-Allow-Methods': 'POST, OPTIONS',
-      },
-      body: '',
-    };
+  if (req.method === 'OPTIONS') {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    return res.status(200).end();
   }
 
-  if (event.httpMethod !== 'POST') {
-    return {
-      statusCode: 405,
-      headers: {
-        'Access-Control-Allow-Origin': '*',
-      },
-      body: JSON.stringify({ error: 'Method not allowed' }),
-    };
+  if (req.method !== 'POST') {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    return res.status(405).json({ error: 'Method not allowed' });
   }
 
   try {
-    const body: SignalRequest = JSON.parse(event.body || '{}');
+    const body: SignalRequest = req.body;
     const { symbol, accountSize, tradeRiskPercent } = body;
 
     // Validate input
     if (!symbol || !accountSize || !tradeRiskPercent) {
-      return {
-        statusCode: 400,
-        headers: {
-          'Access-Control-Allow-Origin': '*',
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ error: 'Missing required fields: symbol, accountSize, tradeRiskPercent' }),
-      };
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      return res.status(400).json({ error: 'Missing required fields: symbol, accountSize, tradeRiskPercent' });
     }
 
     if (accountSize <= 0 || tradeRiskPercent <= 0 || tradeRiskPercent > 100) {
-      return {
-        statusCode: 400,
-        headers: {
-          'Access-Control-Allow-Origin': '*',
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ error: 'Invalid account size or risk percentage' }),
-      };
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      return res.status(400).json({ error: 'Invalid account size or risk percentage' });
     }
 
     // Try to fetch real price, fallback to mock
@@ -306,24 +285,12 @@ export const handler = async (event: any) => {
     // Generate signal with consistent calculations
     const response = generateSignal(symbol, currentPrice, accountSize, tradeRiskPercent);
 
-    return {
-      statusCode: 200,
-      headers: {
-        'Access-Control-Allow-Origin': '*',
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(response),
-    };
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Content-Type', 'application/json');
+    return res.status(200).json(response);
   } catch (error) {
     console.error('Error generating signal:', error);
-    return {
-      statusCode: 500,
-      headers: {
-        'Access-Control-Allow-Origin': '*',
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ error: 'Internal server error' }),
-    };
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    return res.status(500).json({ error: 'Internal server error' });
   }
-};
-
+}

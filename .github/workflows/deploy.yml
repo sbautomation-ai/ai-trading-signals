@@ -35,7 +35,11 @@ jobs:
         run: npm run build
         env:
           GITHUB_PAGES: 'true'
-          VITE_API_URL: ${{ secrets.VITE_API_URL || 'https://your-netlify-site.netlify.app/.netlify/functions/generate-signal' }}
+          VITE_API_URL: ${{ secrets.VITE_API_URL }}
+        # Note: VITE_API_URL must be set as a repository secret
+        # Go to Settings → Secrets and variables → Actions → New repository secret
+        # Name: VITE_API_URL
+        # Value: https://your-netlify-site.netlify.app/.netlify/functions/generate-signal
 
       - name: Setup Pages
         uses: actions/configure-pages@v4
