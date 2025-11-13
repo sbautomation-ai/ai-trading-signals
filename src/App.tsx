@@ -3,57 +3,55 @@ import { SignalForm } from './components/SignalForm';
 import { SignalDisplay } from './components/SignalDisplay';
 import { SignalResponse, SignalRequest } from './types/trading';
 
+const API_BASE =
+  (import.meta as any)?.env?.VITE_API_URL
+    ? String((import.meta as any).env.VITE_API_URL).replace(/\/+$/, '')
+    : '';
+
+function apiUrl(path: string) {
+  if (!path.startsWith('/')) path = '/' + path;
+  return `${API_BASE}${path}`;
+}
+
 function App() {
   const [signalData, setSignalData] = useState<SignalResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const handleSubmit = async (symbol: string, accountSize: number, tradeRiskPercent: number, originalSymbolFormat: string) => {
+  const handleSubmit = async (
+    symbol: string,
+    accountSize: number,
+    tradeRiskPercent: number,
+    originalSymbolFormat: string
+  ) => {
     setIsLoading(true);
     setError(null);
 
     try {
-      const request: SignalRequest = {
-        symbol,
-        accountSize,
-        tradeRiskPercent,
-      };
+      const request: SignalRequest = { symbol, accountSize, tradeRiskPercent };
 
-      // Use environment variable for API URL
-      // On GitHub Pages, VITE_API_URL must be set as a secret pointing to your backend API
-      const apiUrl = import.meta.env.VITE_API_URL;
-      
-      if (!apiUrl) {
-        throw new Error('API URL not configured. Please set VITE_API_URL environment variable.');
-      }
-      
-      console.log('Fetching from:', apiUrl); // Debug log
-      
-      const response = await fetch(apiUrl, {
+      const response = await fetch(apiUrl('/api/generate-signal'), {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(request),
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to generate signal');
+        let msg = 'Failed to generate signal';
+        try {
+          const e = await response.json();
+          if (e?.error) msg = e.error;
+        } catch {}
+        throw new Error(msg);
       }
 
       const data: SignalResponse = await response.json();
-      // Update symbol to show in original format
+      // Preserve original user-typed symbol for display
       data.signal.symbol = originalSymbolFormat.toLowerCase();
       setSignalData(data);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'An error occurred';
-      // Provide more helpful error message if API URL might be wrong
-      if (errorMessage.includes('Failed to fetch') || errorMessage.includes('NetworkError')) {
-        setError(`Failed to connect to API. Please check that VITE_API_URL is configured correctly. Error: ${errorMessage}`);
-      } else {
-        setError(errorMessage);
-      }
+      setError(errorMessage);
       setSignalData(null);
     } finally {
       setIsLoading(false);
@@ -64,76 +62,40 @@ function App() {
     <div className="min-h-screen bg-background">
       {/* Hero Section */}
       <div className="border-b">
-        <div className="container mx-auto px-4 py-12 md:py-16">
-          <div className="max-w-4xl mx-auto">
-            <div className="text-center mb-12">
-              <h1 className="text-4xl md:text-5xl font-bold mb-4">
-                On-Demand Trading Signals
-              </h1>
-              <p className="text-xl text-muted-foreground">
-                Get instant, AI-generated trading signals tailored to your account size and risk tolerance. Professional-grade analysis delivered in seconds.
-              </p>
-            </div>
-
-            {/* Feature Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
-              <div className="text-center p-6 rounded-lg border bg-card">
-                <div className="text-3xl mb-3">⚡</div>
-                <h3 className="font-semibold mb-2">Instant Signals</h3>
-                <p className="text-sm text-muted-foreground">
-                  Get trading signals in seconds, not hours
-                </p>
-              </div>
-              <div className="text-center p-6 rounded-lg border bg-card">
-                <div className="text-3xl mb-3">📈</div>
-                <h3 className="font-semibold mb-2">Maximize Profits</h3>
-                <p className="text-sm text-muted-foreground">
-                  Optimize your trading strategy for better returns
-                </p>
-              </div>
-              <div className="text-center p-6 rounded-lg border bg-card">
-                <div className="text-3xl mb-3">🤖</div>
-                <h3 className="font-semibold mb-2">AI-Powered Analysis</h3>
-                <p className="text-sm text-muted-foreground">
-                  Advanced algorithms analyze market conditions
-                </p>
-              </div>
-            </div>
+        <div className="container mx-auto px-4 py-12">
+          <div className="text-center max-w-3xl mx-auto">
+            <h1 className="text-4xl font-bold tracking-tight mb-4">
+              On-Demand AI Trading Signals
+            </h1>
+            <p className="text-muted-foreground">
+              Get instant, structured trading signals with risk and position sizing.
+            </p>
           </div>
         </div>
       </div>
 
-      {/* Main Content */}
-      <div className="container mx-auto px-4 py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          {/* Left: Form */}
-          <div>
-            <SignalForm onSubmit={handleSubmit} isLoading={isLoading} />
-            {error && (
-              <div className="mt-4 p-4 bg-red-500/10 border border-red-500/20 rounded-md">
-                <p className="text-sm text-red-400">{error}</p>
-              </div>
-            )}
-          </div>
+      {/* Form + Results */}
+      <div className="container mx-auto px-4 py-10 max-w-3xl">
+        <SignalForm onSubmit={handleSubmit} isLoading={isLoading} />
 
-          {/* Right: Signal Display */}
-          <div>
-            <SignalDisplay signalData={signalData} />
+        {error && (
+          <div className="mt-6 rounded-md border border-red-500/40 bg-red-900/20 p-4 text-red-200">
+            {error}
           </div>
-        </div>
-      </div>
+        )}
 
-      {/* Disclaimer Footer */}
-      <div className="border-t mt-12">
-        <div className="container mx-auto px-4 py-6">
-          <p className="text-sm text-muted-foreground text-center max-w-4xl mx-auto">
-            Disclaimer: The signals provided are for educational and informational purposes only. This is not financial advice. Trading involves risk, and you should only trade with money you can afford to lose. Past performance does not guarantee future results. Always conduct your own research and consult with a licensed financial advisor before making investment decisions.
-          </p>
-        </div>
+        {signalData && (
+          <div className="mt-8">
+            <SignalDisplay data={signalData} />
+          </div>
+        )}
+
+        <p className="mt-10 text-xs text-muted-foreground text-center">
+          This is not financial advice. Trading involves risk.
+        </p>
       </div>
     </div>
   );
 }
 
 export default App;
-
