@@ -41,8 +41,27 @@ interface InstrumentMetadata {
 }
 
 const INSTRUMENT_METADATA: Record<string, InstrumentMetadata> = {
+  // Indices
+  'SPX500': { lotSize: 1 },
+  'US100': { lotSize: 1 },
+  'US30': { lotSize: 1 },
+  
+  // Metals
   'XAUUSD': { lotSize: 100 },
+  'XAGUSD': { lotSize: 5000 },
+  'XPDUSD': { lotSize: 100 },
   'GOLD': { lotSize: 100 },
+  
+  // Crypto
+  'BTCUSD': { lotSize: 1 },
+  'BTCEUR': { lotSize: 1 },
+  'ETHUSD': { lotSize: 1 },
+  'LTCUSD': { lotSize: 1 },
+  'XRPUSD': { lotSize: 1 },
+  'BTCUSDT': { lotSize: 1 },
+  'ETHUSDT': { lotSize: 1 },
+  
+  // Forex Majors
   'EURUSD': { lotSize: 100000, pipValue: 0.0001 },
   'GBPUSD': { lotSize: 100000, pipValue: 0.0001 },
   'USDJPY': { lotSize: 100000, pipValue: 0.01 },
@@ -50,10 +69,27 @@ const INSTRUMENT_METADATA: Record<string, InstrumentMetadata> = {
   'USDCAD': { lotSize: 100000, pipValue: 0.0001 },
   'USDCHF': { lotSize: 100000, pipValue: 0.0001 },
   'NZDUSD': { lotSize: 100000, pipValue: 0.0001 },
-  'BTCUSD': { lotSize: 1 },
-  'ETHUSD': { lotSize: 1 },
-  'BTCUSDT': { lotSize: 1 },
-  'ETHUSDT': { lotSize: 1 },
+  'AUDCAD': { lotSize: 100000, pipValue: 0.0001 },
+  'AUDCHF': { lotSize: 100000, pipValue: 0.0001 },
+  'AUDJPY': { lotSize: 100000, pipValue: 0.01 },
+  'AUDNZD': { lotSize: 100000, pipValue: 0.0001 },
+  'CADCHF': { lotSize: 100000, pipValue: 0.0001 },
+  'CADJPY': { lotSize: 100000, pipValue: 0.01 },
+  'CHFJPY': { lotSize: 100000, pipValue: 0.01 },
+  'EURAUD': { lotSize: 100000, pipValue: 0.0001 },
+  'EURCAD': { lotSize: 100000, pipValue: 0.0001 },
+  'EURCHF': { lotSize: 100000, pipValue: 0.0001 },
+  'EURGBP': { lotSize: 100000, pipValue: 0.0001 },
+  'EURJPY': { lotSize: 100000, pipValue: 0.01 },
+  'EURNZD': { lotSize: 100000, pipValue: 0.0001 },
+  'GBPAUD': { lotSize: 100000, pipValue: 0.0001 },
+  'GBPCAD': { lotSize: 100000, pipValue: 0.0001 },
+  'GBPCHF': { lotSize: 100000, pipValue: 0.0001 },
+  'GBPJPY': { lotSize: 100000, pipValue: 0.01 },
+  'GBPNZD': { lotSize: 100000, pipValue: 0.0001 },
+  'NZDCAD': { lotSize: 100000, pipValue: 0.0001 },
+  'NZDCHF': { lotSize: 100000, pipValue: 0.0001 },
+  'NZDJPY': { lotSize: 100000, pipValue: 0.01 },
 };
 
 function getInstrumentMetadata(symbol: string): InstrumentMetadata {
