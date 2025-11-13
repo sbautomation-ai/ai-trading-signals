@@ -3,16 +3,6 @@ import { SignalForm } from './components/SignalForm';
 import { SignalDisplay } from './components/SignalDisplay';
 import { SignalResponse, SignalRequest } from './types/trading';
 
-const API_BASE =
-  (import.meta as any)?.env?.VITE_API_URL
-    ? String((import.meta as any).env.VITE_API_URL).replace(/\/+$/, '')
-    : '';
-
-function apiUrl(path: string) {
-  if (!path.startsWith('/')) path = '/' + path;
-  return `${API_BASE}${path}`;
-}
-
 function App() {
   const [signalData, setSignalData] = useState<SignalResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -30,13 +20,18 @@ function App() {
     try {
       const request: SignalRequest = { symbol, accountSize, tradeRiskPercent };
 
-      const response = await fetch(apiUrl('/api/generate-signal'), {
+      // Prefer same-origin API; allow override via VITE_API_URL (no trailing slash)
+      const API_BASE = import.meta.env.VITE_API_URL || '';
+      const url = `${API_BASE}/api/generate-signal`;
+
+      const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(request),
       });
 
       if (!response.ok) {
+        // Try to read API error; fall back to generic
         let msg = 'Failed to generate signal';
         try {
           const e = await response.json();
@@ -46,7 +41,7 @@ function App() {
       }
 
       const data: SignalResponse = await response.json();
-      // Preserve original user-typed symbol for display
+      // Keep the originally-typed symbol for display
       data.signal.symbol = originalSymbolFormat.toLowerCase();
       setSignalData(data);
     } catch (err) {
@@ -90,6 +85,7 @@ function App() {
           </div>
         )}
 
+        {/* Disclaimer */}
         <p className="mt-10 text-xs text-muted-foreground text-center">
           This is not financial advice. Trading involves risk.
         </p>
