@@ -60,10 +60,64 @@ const TRADING_SYMBOLS = {
   ],
 };
 
+// Helper to approximate if the market is open for the selected symbol.
+// - Crypto (BTC/ETH/LTC/XRP) is treated as 24/7 open.
+// - Other instruments: open Mon–Fri between 08:00 and 22:00 local time.
+function getMarketStatus(symbolRaw: string): { isOpen: boolean; message: string | null } {
+  const trimmed = symbolRaw.trim();
+  if (!trimmed) {
+    return { isOpen: true, message: null };
+  }
+
+  const symbol = trimmed.toUpperCase();
+  const isCrypto =
+    symbol.includes('BTC') ||
+    symbol.includes('ETH') ||
+    symbol.includes('LTC') ||
+    symbol.includes('XRP');
+
+  if (isCrypto) {
+    return {
+      isOpen: true,
+      message: 'Crypto markets generally trade 24/7.',
+    };
+  }
+
+  const now = new Date();
+  const day = now.getDay(); // 0 = Sunday, 6 = Saturday
+  const hour = now.getHours();
+
+  const isWeekend = day === 0 || day === 6;
+  if (isWeekend) {
+    return {
+      isOpen: false,
+      message:
+        'Market appears to be closed for this instrument (weekend). Signals may not be immediately tradeable.',
+    };
+  }
+
+  const withinSession = hour >= 8 && hour < 22;
+  if (!withinSession) {
+    return {
+      isOpen: false,
+      message:
+        'Market appears to be closed for this instrument (outside typical weekday hours). Signals may not be immediately tradeable.',
+    };
+  }
+
+  return { isOpen: true, message: null };
+}
+
 export function SignalForm({ onSubmit, isLoading }: SignalFormProps) {
   const [symbol, setSymbol] = useState('XAUUSD');
   const [accountSize, setAccountSize] = useState('10000');
   const [tradeRiskPercent, setTradeRiskPercent] = useState('2');
+
+  // Derived values for warnings (do NOT affect submission logic)
+  const riskNumForDisplay = parseFloat(tradeRiskPercent || '0');
+  const isHighRisk = riskNumForDisplay > 3;
+
+  const marketStatus = getMarketStatus(symbol);
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
@@ -95,6 +149,7 @@ export function SignalForm({ onSubmit, isLoading }: SignalFormProps) {
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-6">
+          {/* Trading symbol */}
           <div className="space-y-2">
             <Label htmlFor="symbol">Trading Symbol</Label>
             <Select
@@ -116,8 +171,16 @@ export function SignalForm({ onSubmit, isLoading }: SignalFormProps) {
             <p className="text-xs text-muted-foreground">
               Select the trading pair you want to analyze.
             </p>
+
+            {symbol.trim() && !marketStatus.isOpen && marketStatus.message && (
+              <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-500">
+                <p className="font-semibold mb-1">Market appears to be closed</p>
+                <p>{marketStatus.message}</p>
+              </div>
+            )}
           </div>
 
+          {/* Account size */}
           <div className="space-y-2">
             <Label htmlFor="accountSize">Account Size (USD)</Label>
             <Input
@@ -134,6 +197,7 @@ export function SignalForm({ onSubmit, isLoading }: SignalFormProps) {
             </p>
           </div>
 
+          {/* Risk percentage */}
           <div className="space-y-2">
             <Label htmlFor="riskPercent">Trade Risk (%)</Label>
             <Input
@@ -149,6 +213,13 @@ export function SignalForm({ onSubmit, isLoading }: SignalFormProps) {
             <p className="text-xs text-muted-foreground">
               Maximum percentage of account to risk per trade.
             </p>
+
+            {isHighRisk && (
+              <div className="rounded-md border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-400">
+                Warning: You are risking more than 3% on a single trade. This is
+                considered aggressive and can lead to larger drawdowns.
+              </div>
+            )}
           </div>
 
           <Button type="submit" className="w-full" disabled={isLoading}>
@@ -160,4 +231,3 @@ export function SignalForm({ onSubmit, isLoading }: SignalFormProps) {
     </Card>
   );
 }
-
