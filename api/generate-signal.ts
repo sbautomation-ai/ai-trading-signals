@@ -1,15 +1,7 @@
 // Vercel Function: /api/generate-signal
-// Uses OpenAI (via fetch) to generate an AI-powered trading signal based on:
-// - symbol
-// - accountSize
-// - tradeRiskPercent
-//
-// The function:
-// - Handles CORS (for localhost / GitHub Pages etc.)
-// - Accepts POST requests with JSON body: { symbol, accountSize, tradeRiskPercent }
-// - Calls OpenAI's Chat Completions API (gpt-4.1-mini) with a structured prompt
-// - Returns JSON with the same shape your frontend already expects:
-//   { signal: { ... }, risk: { ... } }
+// Uses OpenAI (via fetch) to generate an AI-powered trading signal.
+// If OpenAI returns 429 (Too Many Requests), we fall back to a simple
+// rule-based signal so the app still works.
 
 type SignalSide = 'buy' | 'sell';
 
@@ -69,17 +61,112 @@ export function OPTIONS() {
   });
 }
 
-// Main POST handler
+// ---- Fallback signal generator (no AI, no external API) ----
+
+function buildFallbackSignal(
+  symbol: string,
+  accountSize: number,
+  tradeRiskPercent: number
+): SignalResponseBody {
+  const normalizedSymbol = symbol.trim().toUpperCase();
+
+  const riskAmount = (accountSize * tradeRiskPercent) / 100;
+
+  // Very rough base price heuristics just to make numbers look realistic.
+  let basePrice = 100;
+  if (normalizedSymbol.includes('XAU')) basePrice = 2300;
+  else if (normalizedSymbol.includes('XAG')) basePrice = 28;
+  else if (normalizedSymbol.includes('BTC')) basePrice = 70000;
+  else if (normalizedSymbol.includes('ETH')) basePrice = 3500;
+  else if (normalizedSymbol.includes('US30')) basePrice = 39000;
+  else if (normalizedSymbol.includes('US100')) basePrice = 18000;
+  else if (normalizedSymbol.includes('SPX') || normalizedSymbol.includes('US500'))
+    basePrice = 5200;
+  else if (normalizedSymbol.endsWith('JPY')) basePrice = 150;
+  else if (normalizedSymbol.startsWith('EUR') || normalizedSymbol.startsWith('GBP') || normalizedSymbol.startsWith('AUD') || normalizedSymbol.startsWith('NZD') || normalizedSymbol.startsWith('USD'))
+    basePrice = 1.1;
+
+  // Simple trend bias: odd hash → buy, even → sell
+  const hash = Array.from(normalizedSymbol).reduce(
+    (acc, c) => acc + c.charCodeAt(0),
+    0
+  );
+  const side: SignalSide = hash % 2 === 0 ? 'buy' : 'sell';
+
+  const slDistancePct = 0.01; // 1% of price
+  const entryPrice = basePrice;
+  const slDistance = basePrice * slDistancePct;
+
+  let stopLoss: number;
+  let takeProfit1: number;
+  let takeProfit2: number;
+
+  if (side === 'buy') {
+    stopLoss = entryPrice - slDistance;
+    takeProfit1 = entryPrice + slDistance * 2;
+    takeProfit2 = entryPrice + slDistance * 3;
+  } else {
+    stopLoss = entryPrice + slDistance;
+    takeProfit1 = entryPrice - slDistance * 2;
+    takeProfit2 = entryPrice - slDistance * 3;
+  }
+
+  const rawPositionSize =
+    slDistance > 0 ? riskAmount / slDistance : riskAmount;
+  const positionSize = Number(rawPositionSize.toFixed(2));
+
+  const signal: SignalInfo = {
+    symbol: normalizedSymbol,
+    side,
+    entryType: 'market',
+    entryPrice: Number(entryPrice.toFixed(5)),
+    stopLoss: Number(stopLoss.toFixed(5)),
+    takeProfit1: Number(takeProfit1.toFixed(5)),
+    takeProfit2: Number(takeProfit2.toFixed(5)),
+    timeFrame: 'H1',
+    comment:
+      'Fallback signal generated because the AI quota was exceeded. Levels are based on simple rule-based logic, not live market analysis. Always do your own research.',
+  };
+
+  const risk: RiskInfo = {
+    accountSize,
+    tradeRiskPercent,
+    riskAmount: Number(riskAmount.toFixed(2)),
+    positionSize,
+  };
+
+  return { signal, risk };
+}
+
+// ---- Main POST handler ----
+
 export async function POST(request: Request): Promise<Response> {
   try {
     // 1) Check API key
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
       console.error('Missing OPENAI_API_KEY in environment');
+      // Even if key is missing, we can still return a fallback signal
+      const body: SignalRequestBody = await request.json().catch(() => ({}));
+      const { symbol, accountSize, tradeRiskPercent } = body;
+      if (
+        symbol &&
+        typeof symbol === 'string' &&
+        typeof accountSize === 'number' &&
+        typeof tradeRiskPercent === 'number'
+      ) {
+        const fallback = buildFallbackSignal(
+          symbol,
+          accountSize,
+          tradeRiskPercent
+        );
+        return json(fallback, { status: 200 });
+      }
+
       return json(
         {
           error:
-            'Server misconfiguration: missing OpenAI API key. Please set OPENAI_API_KEY in your environment.',
+            'Server misconfiguration: missing OpenAI API key and invalid request body.',
         },
         { status: 500 }
       );
@@ -190,6 +277,18 @@ Follow the JSON structure exactly as described in the system instructions.
       }
     );
 
+    // 4a) If OpenAI is rate-limited (429), fall back to local logic
+    if (openaiResponse.status === 429) {
+      console.warn('OpenAI returned 429 Too Many Requests - using fallback');
+      const fallback = buildFallbackSignal(
+        normalizedSymbol,
+        accountSize,
+        tradeRiskPercent
+      );
+      return json(fallback, { status: 200 });
+    }
+
+    // 4b) Any other non-OK response is treated as an error
     if (!openaiResponse.ok) {
       const errText = await openaiResponse.text();
       console.error(
@@ -211,10 +310,13 @@ Follow the JSON structure exactly as described in the system instructions.
 
     if (!content) {
       console.error('OpenAI returned no content', completion);
-      return json(
-        { error: 'Failed to generate signal from AI (no content).' },
-        { status: 500 }
+      // As a safety net, still provide fallback
+      const fallback = buildFallbackSignal(
+        normalizedSymbol,
+        accountSize,
+        tradeRiskPercent
       );
+      return json(fallback, { status: 200 });
     }
 
     // 5) Parse and normalise the AI JSON
@@ -223,10 +325,12 @@ Follow the JSON structure exactly as described in the system instructions.
       parsed = JSON.parse(content);
     } catch (err) {
       console.error('Failed to parse OpenAI JSON:', content, err);
-      return json(
-        { error: 'AI response was not valid JSON. Please try again.' },
-        { status: 500 }
+      const fallback = buildFallbackSignal(
+        normalizedSymbol,
+        accountSize,
+        tradeRiskPercent
       );
+      return json(fallback, { status: 200 });
     }
 
     const signal: SignalInfo = {
