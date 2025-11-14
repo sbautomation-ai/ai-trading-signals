@@ -1,11 +1,14 @@
 // Vercel Function: /api/economic-calendar
-// Uses FinancialModelingPrep Economic Calendar API to return upcoming macro events.
+// Uses Finnhub Economic Calendar API to return upcoming macro events.
 //
-// Docs & endpoint example:
-// https://financialmodelingprep.com/api/v3/economic_calendar?from=2020-08-05&to=2020-10-20&apikey=YOUR_API_KEY
+// Docs:
+//   https://finnhub.io/docs/api/economic-calendar
+//
+// Endpoint (Finnhub):
+//   https://finnhub.io/api/v1/calendar/economic?from=YYYY-MM-DD&to=YYYY-MM-DD&token=YOUR_API_KEY
 //
 // Env vars:
-// - FMP_API_KEY: your FinancialModelingPrep API key (set in Vercel Project Settings > Environment Variables)
+// - FINNHUB_API_KEY: your Finnhub API key (set in Vercel Project Settings > Environment Variables)
 
 interface CalendarEvent {
     datetime: string;
@@ -96,7 +99,7 @@ interface CalendarEvent {
   }
   
   // Handle OPTIONS preflight
-  export function OPTIONS() {
+  export function OPTIONS(): Response {
     return new Response(null, {
       status: 200,
       headers: CORS_HEADERS,
@@ -112,6 +115,7 @@ interface CalendarEvent {
       const today = new Date();
       const formatDate = (d: Date) => d.toISOString().slice(0, 10);
   
+      // Default window: yesterday → 6 days ahead
       if (!from || !to) {
         const start = new Date(today);
         start.setDate(start.getDate() - 1); // yesterday
@@ -121,29 +125,31 @@ interface CalendarEvent {
         to = formatDate(end);
       }
   
-      const apiKey = process.env.FMP_API_KEY;
+      const apiKey = process.env.FINNHUB_API_KEY;
   
       // If no API key is configured, log it and return demo data (status 200)
       if (!apiKey) {
-        logError('Missing FMP_API_KEY env var; returning static demo data.', {
+        logError('Missing FINNHUB_API_KEY env var; returning static demo data.', {
           from,
           to,
         });
         return buildDemoResponse(
           from,
           to,
-          'Static demo data returned because FMP_API_KEY is not configured.'
+          'Static demo data returned because FINNHUB_API_KEY is not configured.'
         );
       }
   
-      const fmpUrl = `https://financialmodelingprep.com/api/v3/economic_calendar?from=${from}&to=${to}&apikey=${apiKey}`;
+      // Finnhub Economic Calendar endpoint
+      // Docs: https://finnhub.io/docs/api/economic-calendar
+      const finnhubUrl = `https://finnhub.io/api/v1/calendar/economic?from=${from}&to=${to}&token=${apiKey}`;
   
-      logInfo('Fetching economic calendar from FMP', { from, to });
+      logInfo('Fetching economic calendar from Finnhub', { from, to });
   
-      const res = await fetch(fmpUrl);
+      const res = await fetch(finnhubUrl);
   
       if (!res.ok) {
-        logError('FMP API error, falling back to demo data', {
+        logError('Finnhub API error, falling back to demo data', {
           status: res.status,
           statusText: res.statusText,
         });
@@ -154,28 +160,29 @@ interface CalendarEvent {
         );
       }
   
-      const raw = (await res.json()) as any[];
+      const raw = (await res.json()) as any;
   
-      const events: CalendarEvent[] = Array.isArray(raw)
-        ? raw.map((item) => ({
-            datetime: String(item.date || item.datetime || ''),
-            country: String(item.country || item.countryCode || ''),
-            event: String(item.event || item.title || item.name || ''),
-            impact: item.impact ? String(item.impact) : null,
-            previous:
-              item.previous !== undefined && item.previous !== null
-                ? item.previous
-                : null,
-            actual:
-              item.actual !== undefined && item.actual !== null
-                ? item.actual
-                : null,
-            forecast:
-              item.forecast !== undefined && item.forecast !== null
-                ? item.forecast
-                : null,
-          }))
+      // Finnhub returns: { economicCalendar: [ { event, time, country, impact, estimate, actual, prev, unit, ... }, ... ] }
+      const rawEvents = Array.isArray(raw?.economicCalendar)
+        ? raw.economicCalendar
         : [];
+  
+      const events: CalendarEvent[] = rawEvents.map((item: any) => ({
+        datetime: String(item.time || item.date || ''),
+        country: String(item.country || ''),
+        event: String(item.event || item.title || item.name || ''),
+        impact: item.impact ? String(item.impact) : null,
+        previous:
+          item.prev !== undefined && item.prev !== null ? item.prev : null,
+        actual:
+          item.actual !== undefined && item.actual !== null ? item.actual : null,
+        forecast:
+          item.estimate !== undefined && item.estimate !== null
+            ? item.estimate
+            : null,
+      }));
+  
+      logInfo('Finnhub calendar events loaded', { count: events.length });
   
       return json(
         {
@@ -187,9 +194,12 @@ interface CalendarEvent {
       );
     } catch (error: any) {
       const message = error?.message ?? String(error);
-      logError('Unhandled error in /api/economic-calendar; falling back to demo data', {
-        message,
-      });
+      logError(
+        'Unhandled error in /api/economic-calendar; falling back to demo data',
+        {
+          message,
+        }
+      );
   
       // On any unexpected error, fall back to demo data instead of 500
       const today = new Date();
