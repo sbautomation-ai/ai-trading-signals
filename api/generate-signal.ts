@@ -1,7 +1,12 @@
 // Vercel Function: /api/generate-signal
 // Uses OpenAI (via fetch) to generate an AI-powered trading signal.
-// If OpenAI returns 429 (Too Many Requests), we fall back to a simple
-// rule-based signal so the app still works.
+// If OpenAI returns 429 (Too Many Requests) or the response is unusable,
+// we fall back to a simple rule-based signal so the app still works.
+//
+// Also includes basic logging of:
+// - Request count
+// - Fallback usage
+// - Errors (sanitized, no sensitive data)
 
 type SignalSide = 'buy' | 'sell';
 
@@ -41,6 +46,29 @@ const CORS_HEADERS = {
   'Access-Control-Allow-Methods': 'POST,OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type',
 };
+
+// Simple counters – these reset when the function cold-starts,
+// but give you a feel for traffic in logs.
+let requestCount = 0;
+let errorCount = 0;
+let fallbackCount = 0;
+
+// Helper logging functions
+function logInfo(message: string, extra?: Record<string, unknown>) {
+  if (extra) {
+    console.log('[generate-signal]', message, extra);
+  } else {
+    console.log('[generate-signal]', message);
+  }
+}
+
+function logError(message: string, extra?: Record<string, unknown>) {
+  if (extra) {
+    console.error('[generate-signal]', message, extra);
+  } else {
+    console.error('[generate-signal]', message);
+  }
+}
 
 // Helper to return JSON with CORS headers
 function json(data: unknown, init?: ResponseInit): Response {
@@ -131,7 +159,7 @@ function buildFallbackSignal(
     takeProfit2: Number(takeProfit2.toFixed(5)),
     timeFrame: 'H1',
     comment:
-      'Fallback signal generated because the AI quota was exceeded. Levels are based on simple rule-based logic, not live market analysis. Always do your own research.',
+      'Fallback signal generated because the AI quota was exceeded or unavailable. Levels are based on simple rule-based logic, not live market analysis. Always do your own research.',
   };
 
   const risk: RiskInfo = {
@@ -148,12 +176,19 @@ function buildFallbackSignal(
 
 export async function POST(request: Request): Promise<Response> {
   try {
+    requestCount += 1;
+
     // 1) Check API key
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
-      console.error('Missing OPENAI_API_KEY in environment');
-      // Even if key is missing, we can still return a fallback signal
-      const body: SignalRequestBody = await request.json().catch(() => ({}));
+      logError('Missing OPENAI_API_KEY in environment', { requestCount });
+      // Even if key is missing, we can still return a fallback signal if body is valid
+      let body: SignalRequestBody = {};
+      try {
+        body = (await request.json()) as SignalRequestBody;
+      } catch {
+        // ignore parse errors
+      }
       const { symbol, accountSize, tradeRiskPercent } = body;
       if (
         symbol &&
@@ -161,6 +196,11 @@ export async function POST(request: Request): Promise<Response> {
         typeof accountSize === 'number' &&
         typeof tradeRiskPercent === 'number'
       ) {
+        fallbackCount += 1;
+        logInfo('Using fallback due to missing API key', {
+          fallbackCount,
+          symbol,
+        });
         const fallback = buildFallbackSignal(
           symbol,
           accountSize,
@@ -179,7 +219,12 @@ export async function POST(request: Request): Promise<Response> {
     }
 
     // 2) Read and validate request body
-    const body: SignalRequestBody = await request.json().catch(() => ({}));
+    let body: SignalRequestBody = {};
+    try {
+      body = (await request.json()) as SignalRequestBody;
+    } catch {
+      // ignore parse errors, will be caught by validation below
+    }
 
     const { symbol, accountSize, tradeRiskPercent } = body;
 
@@ -212,6 +257,13 @@ export async function POST(request: Request): Promise<Response> {
 
     const normalizedSymbol = symbol.trim().toUpperCase();
     const riskAmount = (accountSize * tradeRiskPercent) / 100;
+
+    logInfo('Incoming request', {
+      requestCount,
+      symbol: normalizedSymbol,
+      accountSize,
+      tradeRiskPercent,
+    });
 
     // 3) Build prompts
     const systemPrompt = `
@@ -285,7 +337,11 @@ Follow the JSON structure exactly as described in the system instructions.
 
     // 4a) If OpenAI is rate-limited (429), fall back to local logic
     if (openaiResponse.status === 429) {
-      console.warn('OpenAI returned 429 Too Many Requests - using fallback');
+      fallbackCount += 1;
+      logInfo('OpenAI returned 429 Too Many Requests - using fallback', {
+        fallbackCount,
+        symbol: normalizedSymbol,
+      });
       const fallback = buildFallbackSignal(
         normalizedSymbol,
         accountSize,
@@ -296,13 +352,14 @@ Follow the JSON structure exactly as described in the system instructions.
 
     // 4b) Any other non-OK response is treated as an error
     if (!openaiResponse.ok) {
+      errorCount += 1;
       const errText = await openaiResponse.text();
-      console.error(
-        'OpenAI API error',
-        openaiResponse.status,
-        openaiResponse.statusText,
-        errText
-      );
+      logError('OpenAI API error', {
+        status: openaiResponse.status,
+        statusText: openaiResponse.statusText,
+        errorCount,
+      });
+      // Don't log full errText if you are worried about size; here it's usually safe.
       return json(
         {
           error: `OpenAI API error (${openaiResponse.status} ${openaiResponse.statusText}). Check your API key, model name, or quota.`,
@@ -315,8 +372,11 @@ Follow the JSON structure exactly as described in the system instructions.
     const content = completion?.choices?.[0]?.message?.content;
 
     if (!content) {
-      console.error('OpenAI returned no content', completion);
-      // As a safety net, still provide fallback
+      fallbackCount += 1;
+      logError('OpenAI returned no content, using fallback', {
+        fallbackCount,
+        symbol: normalizedSymbol,
+      });
       const fallback = buildFallbackSignal(
         normalizedSymbol,
         accountSize,
@@ -330,7 +390,11 @@ Follow the JSON structure exactly as described in the system instructions.
     try {
       parsed = JSON.parse(content);
     } catch (err) {
-      console.error('Failed to parse OpenAI JSON:', content, err);
+      fallbackCount += 1;
+      logError('Failed to parse OpenAI JSON, using fallback', {
+        fallbackCount,
+        symbol: normalizedSymbol,
+      });
       const fallback = buildFallbackSignal(
         normalizedSymbol,
         accountSize,
@@ -377,14 +441,25 @@ Follow the JSON structure exactly as described in the system instructions.
       risk,
     };
 
+    logInfo('Signal generated successfully', {
+      symbol: normalizedSymbol,
+      side: signal.side,
+      model: 'gpt-4.1-nano',
+    });
+
     return json(responseBody, { status: 200 });
   } catch (error: any) {
-    console.error('Error in /api/generate-signal:', error);
+    errorCount += 1;
+    const message = error?.message ?? String(error);
+    logError('Unhandled error in /api/generate-signal', {
+      errorCount,
+      message,
+    });
     return json(
       {
         error:
           'Internal error while generating signal.' +
-          (error?.message ? ` Details: ${error.message}` : ''),
+          (message ? ` Details: ${message}` : ''),
       },
       { status: 500 }
     );

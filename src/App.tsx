@@ -24,19 +24,19 @@ function App() {
         tradeRiskPercent,
       };
 
-      // VITE_API_URL should be the full URL to your backend endpoint, e.g.
-      // https://ai-trading-signals-clean.vercel.app/api/generate-signal
-      const apiUrl = import.meta.env.VITE_API_URL?.trim();
+      // Prefer a relative API URL in production/preview, but allow an explicit override for local dev
+      const apiUrlFromEnv = import.meta.env.VITE_API_URL?.toString().trim();
+      const apiUrl =
+        apiUrlFromEnv && apiUrlFromEnv.length > 0
+          ? apiUrlFromEnv
+          : '/api/generate-signal';
 
-      if (!apiUrl) {
-        setError(
-          'The app is not configured with an API URL yet. Please set VITE_API_URL to your backend endpoint (for example: https://ai-trading-signals-clean.vercel.app/api/generate-signal) and rebuild the app.'
-        );
-        setSignalData(null);
-        return;
-      }
-
-      console.log('Fetching from:', apiUrl);
+      console.log('[SignalForm] Sending signal request', {
+        apiUrl,
+        symbol,
+        accountSize,
+        tradeRiskPercent,
+      });
 
       const response = await fetch(apiUrl, {
         method: 'POST',
@@ -47,33 +47,41 @@ function App() {
       });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => null);
-        throw new Error(errorData?.error || 'Failed to generate signal');
+        let errorMessage = 'Failed to generate signal';
+        try {
+          const errorData = await response.json();
+          if (errorData?.error) {
+            errorMessage = errorData.error;
+          }
+        } catch {
+          // ignore JSON parse errors here
+        }
+        throw new Error(errorMessage);
       }
 
       const data: SignalResponse = await response.json();
-
-      // If you want to display the symbol as the user originally entered it:
-      if (data?.signal) {
-        data.signal.symbol = originalSymbolFormat;
-      }
-
+      // Update symbol to show in original format
+      data.signal.symbol = originalSymbolFormat.toLowerCase();
       setSignalData(data);
     } catch (err) {
       const errorMessage =
         err instanceof Error ? err.message : 'An error occurred';
 
+      console.error('[SignalForm] Error generating signal', {
+        message: errorMessage,
+      });
+
+      // Provide more helpful error message if API URL might be wrong
       if (
         errorMessage.includes('Failed to fetch') ||
         errorMessage.includes('NetworkError')
       ) {
         setError(
-          `Failed to connect to API. Please check that VITE_API_URL is configured correctly. Error: ${errorMessage}`
+          `Failed to connect to API. If you're running locally, check VITE_API_URL in your .env.local, or ensure /api/generate-signal is reachable. Error: ${errorMessage}`
         );
       } else {
         setError(errorMessage);
       }
-
       setSignalData(null);
     } finally {
       setIsLoading(false);
@@ -81,8 +89,8 @@ function App() {
   };
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Hero Section */}
+    <div className="min-h-screen bg-background text-foreground flex flex-col">
+      {/* Top Hero / Header */}
       <div className="border-b">
         <div className="container mx-auto px-4 py-12 md:py-16">
           <div className="max-w-4xl mx-auto">
@@ -92,82 +100,67 @@ function App() {
               </h1>
               <p className="text-xl text-muted-foreground">
                 Get instant, AI-generated trading signals tailored to your
-                account size and risk tolerance. Professional-style analysis
+                account size and risk tolerance. Professional-grade analysis
                 delivered in seconds.
               </p>
             </div>
 
-            <div className="grid gap-4 md:grid-cols-3 text-sm text-muted-foreground">
-              <div className="p-4 border rounded-lg bg-card">
-                <p className="font-medium mb-1">AI-Powered</p>
-                <p>Signals generated using AI logic, not fixed templates.</p>
+            {/* Feature Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
+              <div className="text-center p-6 rounded-lg border bg-card">
+                <div className="text-3xl mb-3">⚡️</div>
+                <h3 className="font-semibold mb-2">On-Demand Signals</h3>
+                <p className="text-sm text-muted-foreground">
+                  Get trading signals in seconds, not hours
+                </p>
               </div>
-              <div className="p-4 border rounded-lg bg-card">
-                <p className="font-medium mb-1">Risk-Aware</p>
-                <p>Position sizing based on your account size and % risk.</p>
+              <div className="text-center p-6 rounded-lg border bg-card">
+                <div className="text-3xl mb-3">📈</div>
+                <h3 className="font-semibold mb-2">Maximize Profits</h3>
+                <p className="text-sm text-muted-foreground">
+                  Optimize your trading strategy for better returns
+                </p>
               </div>
-              <div className="p-4 border rounded-lg bg-card">
-                <p className="font-medium mb-1">On Demand</p>
-                <p>Request a fresh signal whenever you need one.</p>
+              <div className="text-center p-6 rounded-lg border bg-card">
+                <div className="text-3xl mb-3">🤖</div>
+                <h3 className="font-semibold mb-2">AI-Powered Analysis</h3>
+                <p className="text-sm text-muted-foreground">
+                  Advanced AI-driven insights based on your inputs
+                </p>
+              </div>
+            </div>
+
+            {/* Main content grid: Form + Signal */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
+              {/* Left: Form */}
+              <div>
+                <SignalForm onSubmit={handleSubmit} isLoading={isLoading} />
+                {error && (
+                  <div className="mt-4 p-4 bg-red-500/10 border border-red-500/20 rounded-md">
+                    <p className="text-sm text-red-400">{error}</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Right: Signal Display */}
+              <div>
+                <SignalDisplay signalData={signalData} />
               </div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Main Content */}
-      <main className="container mx-auto px-4 py-10 md:py-12">
-        <div className="max-w-5xl mx-auto grid gap-8 md:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] items-start">
-          {/* Left: Form */}
-          <div>
-            <SignalForm onSubmit={handleSubmit} isLoading={isLoading} />
-
-            {error && (
-              <div className="mt-4 p-4 bg-red-500/10 border border-red-500/20 rounded-md">
-                <p className="text-sm text-red-400">{error}</p>
-              </div>
-            )}
-          </div>
-
-          {/* Right: Signal Display */}
-          <div>
-            {/* IMPORTANT: pass `signalData`, not `data` */}
-            <SignalDisplay signalData={signalData} />
-          </div>
-        </div>
-
-        {/* Extra notes / disclaimer highlight */}
-        <div className="mt-10 max-w-5xl mx-auto grid gap-6 md:grid-cols-2 text-sm text-muted-foreground">
-          <div className="p-4 border rounded-lg bg-card">
-            <p className="font-semibold mb-2">How it works</p>
-            <ul className="space-y-1 list-disc list-inside">
-              <li>Choose your instrument and account size.</li>
-              <li>Set how much of your account you want to risk.</li>
-              <li>
-                Get entry, stop loss, and take profit levels plus position size.
-              </li>
-            </ul>
-          </div>
-          <div className="p-4 border rounded-lg bg-card">
-            <p className="font-semibold mb-2">Important</p>
-            <p>
-              These signals are generated automatically and are{' '}
-              <span className="font-semibold">not financial advice</span>. Always
-              do your own research and only risk money you can afford to lose.
-            </p>
-          </div>
-        </div>
-      </main>
-
       {/* Disclaimer Footer */}
       <div className="border-t mt-12">
         <div className="container mx-auto px-4 py-6">
           <p className="text-sm text-muted-foreground text-center max-w-4xl mx-auto">
-            Disclaimer: The signals provided by this tool are for educational
-            and informational purposes only and do not constitute financial
-            advice. Trading involves significant risk and may result in the loss
-            of your capital. Always consult with a licensed financial advisor
-            before making investment decisions.
+            Disclaimer: The signals provided are for educational purposes only
+            and do not constitute financial advice. Trading involves risk, and
+            you should only trade with money you can afford to lose. Past
+            performance does not guarantee future results. Always do your own
+            research and consider consulting a licensed financial advisor before
+            making investment decisions.
           </p>
         </div>
       </div>
