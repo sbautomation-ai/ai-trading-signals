@@ -83,7 +83,13 @@ function buildFallbackSignal(
   else if (normalizedSymbol.includes('SPX') || normalizedSymbol.includes('US500'))
     basePrice = 5200;
   else if (normalizedSymbol.endsWith('JPY')) basePrice = 150;
-  else if (normalizedSymbol.startsWith('EUR') || normalizedSymbol.startsWith('GBP') || normalizedSymbol.startsWith('AUD') || normalizedSymbol.startsWith('NZD') || normalizedSymbol.startsWith('USD'))
+  else if (
+    normalizedSymbol.startsWith('EUR') ||
+    normalizedSymbol.startsWith('GBP') ||
+    normalizedSymbol.startsWith('AUD') ||
+    normalizedSymbol.startsWith('NZD') ||
+    normalizedSymbol.startsWith('USD')
+  )
     basePrice = 1.1;
 
   // Simple trend bias: odd hash → buy, even → sell
@@ -257,7 +263,7 @@ Assume the user wants a short-term intraday or swing trade (H1 or H4) with a cle
 Follow the JSON structure exactly as described in the system instructions.
 `;
 
-    // 4) Call OpenAI via fetch
+    // 4) Call OpenAI via fetch – using the CHEAPEST reasonable model: gpt-4.1-nano
     const openaiResponse = await fetch(
       'https://api.openai.com/v1/chat/completions',
       {
@@ -267,7 +273,7 @@ Follow the JSON structure exactly as described in the system instructions.
           Authorization: `Bearer ${apiKey}`,
         },
         body: JSON.stringify({
-          model: 'gpt-4.1-mini',
+          model: 'gpt-4.1-nano',
           response_format: { type: 'json_object' },
           messages: [
             { role: 'system', content: systemPrompt },
