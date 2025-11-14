@@ -1,18 +1,24 @@
 // Vercel Function: /api/generate-signal
-// Modern Node.js runtime style using Web Request/Response.
-// No external libraries needed.
+// Uses OpenAI to generate an AI-powered trading signal based on:
+// - symbol
+// - accountSize
+// - tradeRiskPercent
 //
-// This function:
-// - Handles POST requests with JSON body: { symbol, accountSize, tradeRiskPercent }
-// - Adds CORS headers so you can call it from localhost or GitHub Pages
-// - Returns a simple mock trading signal + risk/position sizing
+// The function:
+// - Handles CORS (for localhost / GitHub Pages etc.)
+// - Accepts POST requests with JSON body: { symbol, accountSize, tradeRiskPercent }
+// - Calls OpenAI (gpt-4.1-mini) with a structured prompt
+// - Returns JSON with the same shape your frontend already expects:
+//   { signal: { ... }, risk: { ... } }
+
+import OpenAI from 'openai';
 
 type SignalSide = 'buy' | 'sell';
 
-interface SignalRequest {
-  symbol: string;
-  accountSize: number;
-  tradeRiskPercent: number;
+interface SignalRequestBody {
+  symbol?: string;
+  accountSize?: number;
+  tradeRiskPercent?: number;
 }
 
 interface RiskInfo {
@@ -39,14 +45,25 @@ interface SignalResponseBody {
   risk: RiskInfo;
 }
 
-// Reusable CORS headers
+// CORS headers (so frontend on localhost or other domains can call this)
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'POST,OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type',
 };
 
-// Handle preflight (OPTIONS) requests
+// Helper to return JSON with CORS headers
+function json(data: unknown, init?: ResponseInit): Response {
+  return new Response(JSON.stringify(data), {
+    status: init?.status ?? 200,
+    headers: {
+      'Content-Type': 'application/json',
+      ...CORS_HEADERS,
+    },
+  });
+}
+
+// Handle OPTIONS preflight requests
 export function OPTIONS() {
   return new Response(null, {
     status: 200,
@@ -54,19 +71,31 @@ export function OPTIONS() {
   });
 }
 
-// Handle the actual POST request
+// Main POST handler
 export async function POST(request: Request): Promise<Response> {
   try {
-    const body = (await request.json()) as Partial<SignalRequest>;
+    // Check API key
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) {
+      console.error('Missing OPENAI_API_KEY in environment');
+      return json(
+        {
+          error:
+            'Server misconfiguration: missing OpenAI API key. Please set OPENAI_API_KEY in your environment.',
+        },
+        { status: 500 }
+      );
+    }
+
+    const openai = new OpenAI({ apiKey });
+
+    const body: SignalRequestBody = await request.json();
 
     const { symbol, accountSize, tradeRiskPercent } = body;
 
-    // Basic validation
+    // Basic validation (keep it strict so we don't send garbage to OpenAI)
     if (!symbol || typeof symbol !== 'string' || !symbol.trim()) {
-      return json(
-        { error: 'symbol is required (string)' },
-        { status: 400 }
-      );
+      return json({ error: 'symbol is required (string)' }, { status: 400 });
     }
 
     if (
@@ -92,55 +121,130 @@ export async function POST(request: Request): Promise<Response> {
       );
     }
 
-    // --- Mock signal logic (you can later replace with real AI) ---
-
-    // Normalize symbol
     const normalizedSymbol = symbol.trim().toUpperCase();
 
-    // Very simple fake price logic for demonstration
-    const basePrice = 100; // imagine this is the current price
-    const side: SignalSide = Math.random() > 0.5 ? 'buy' : 'sell';
-
-    // Distance between entry and stop-loss
-    const slDistance = basePrice * 0.01; // 1% of price
+    // We still compute the basic riskAmount ourselves, to keep it consistent.
     const riskAmount = (accountSize * tradeRiskPercent) / 100;
 
-    // Position size = riskAmount / distance to SL
-    const positionSizeRaw =
-      slDistance > 0 ? riskAmount / slDistance : riskAmount;
-    const positionSize = Number(positionSizeRaw.toFixed(2));
+    // Build a prompt that forces the model to output clean JSON
+    const systemPrompt = `
+You are a professional trading signal generator for FX, indices, metals and crypto.
+Your job is to create short-term trading ideas based on the user's inputs.
 
-    const entryPrice = basePrice;
-    const stopLoss =
-      side === 'buy' ? basePrice - slDistance : basePrice + slDistance;
-    const takeProfit1 =
-      side === 'buy'
-        ? basePrice + slDistance * 1.5
-        : basePrice - slDistance * 1.5;
-    const takeProfit2 =
-      side === 'buy'
-        ? basePrice + slDistance * 3
-        : basePrice - slDistance * 3;
+CRITICAL RULES:
+- You MUST respond with a single valid JSON object only. No extra text, no explanations outside JSON.
+- The JSON structure MUST be:
+
+{
+  "signal": {
+    "symbol": "<string, same as requested symbol>",
+    "side": "buy" | "sell",
+    "entryType": "market" | "limit",
+    "entryPrice": <number>,
+    "stopLoss": <number>,
+    "takeProfit1": <number>,
+    "takeProfit2": <number>,
+    "timeFrame": "<string, e.g. 'M15', 'H1', 'H4'>",
+    "comment": "<short explanation of the idea and key risks>"
+  },
+  "risk": {
+    "accountSize": <number>,
+    "tradeRiskPercent": <number>,
+    "riskAmount": <number>,
+    "positionSize": <number>
+  }
+}
+
+- All numeric fields must be numbers, not strings.
+- "riskAmount" MUST equal accountSize * (tradeRiskPercent / 100).
+- "positionSize" should be a sensible size given the symbol and stop-loss distance, rounded to 2 decimals.
+- Use realistic price levels for the instrument (do not use tiny or huge nonsense numbers).
+- stopLoss and takeProfit prices must make sense relative to entry and side:
+  - For a BUY: stopLoss < entryPrice < takeProfit1 < takeProfit2
+  - For a SELL: stopLoss > entryPrice > takeProfit1 > takeProfit2
+`;
+
+    const userPrompt = `
+Generate ONE trading signal using the following inputs:
+
+- Symbol: ${normalizedSymbol}
+- Account size: ${accountSize}
+- Risk per trade (%): ${tradeRiskPercent}
+
+Assume the user wants a short-term intraday or swing trade (H1 or H4) with a clear idea, proper stop loss, and two take-profit targets.
+
+Follow the JSON structure exactly as described in the system instructions.
+`;
+
+    // Call OpenAI Chat Completions with JSON response format
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-4.1-mini',
+      response_format: { type: 'json_object' },
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+    });
+
+    const content = completion.choices[0]?.message?.content;
+    if (!content) {
+      console.error('OpenAI returned no content', completion);
+      return json(
+        { error: 'Failed to generate signal from AI (no content).' },
+        { status: 500 }
+      );
+    }
+
+    let parsed: any;
+    try {
+      parsed = JSON.parse(content);
+    } catch (err) {
+      console.error('Failed to parse OpenAI JSON:', content, err);
+      return json(
+        { error: 'AI response was not valid JSON. Please try again.' },
+        { status: 500 }
+      );
+    }
+
+    // Basic shape checks and patching to ensure we conform to SignalResponseBody
+    const signal: SignalInfo = {
+      symbol: normalizedSymbol,
+      side:
+        parsed?.signal?.side === 'sell'
+          ? 'sell'
+          : 'buy', // default to 'buy' if weird
+      entryType:
+        parsed?.signal?.entryType === 'limit' ? 'limit' : 'market',
+      entryPrice: Number(parsed?.signal?.entryPrice) || 0,
+      stopLoss: Number(parsed?.signal?.stopLoss) || 0,
+      takeProfit1: Number(parsed?.signal?.takeProfit1) || 0,
+      takeProfit2: Number(parsed?.signal?.takeProfit2) || 0,
+      timeFrame: parsed?.signal?.timeFrame || 'H1',
+      comment:
+        parsed?.signal?.comment ||
+        'AI-generated trading idea. Always do your own research.',
+    };
+
+    // If AI gave nonsense prices, you might want to add more defensive checks here.
+    // For now we trust the model within reason.
+
+    const aiRiskAmount = Number(parsed?.risk?.riskAmount);
+    const risk: RiskInfo = {
+      accountSize,
+      tradeRiskPercent,
+      // Prefer our own riskAmount calculation to keep it consistent
+      riskAmount: Number.isFinite(aiRiskAmount) && aiRiskAmount > 0
+        ? aiRiskAmount
+        : Number(riskAmount.toFixed(2)),
+      positionSize:
+        Number(parsed?.risk?.positionSize) > 0
+          ? Number(parsed.risk.positionSize)
+          : Number((riskAmount / Math.max(Math.abs(signal.entryPrice - signal.stopLoss), 1)).toFixed(2)),
+    };
 
     const responseBody: SignalResponseBody = {
-      signal: {
-        symbol: normalizedSymbol,
-        side,
-        entryType: 'market',
-        entryPrice: Number(entryPrice.toFixed(2)),
-        stopLoss: Number(stopLoss.toFixed(2)),
-        takeProfit1: Number(takeProfit1.toFixed(2)),
-        takeProfit2: Number(takeProfit2.toFixed(2)),
-        timeFrame: 'H1',
-        comment:
-          'This is a demo signal generated by the backend. Replace this logic with AI later.',
-      },
-      risk: {
-        accountSize,
-        tradeRiskPercent,
-        riskAmount: Number(riskAmount.toFixed(2)),
-        positionSize,
-      },
+      signal,
+      risk,
     };
 
     return json(responseBody, { status: 200 });
@@ -151,15 +255,4 @@ export async function POST(request: Request): Promise<Response> {
       { status: 500 }
     );
   }
-}
-
-// Helper to return JSON with CORS headers
-function json(data: unknown, init?: ResponseInit): Response {
-  return new Response(JSON.stringify(data), {
-    status: init?.status ?? 200,
-    headers: {
-      'Content-Type': 'application/json',
-      ...CORS_HEADERS,
-    },
-  });
 }
