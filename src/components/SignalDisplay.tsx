@@ -1,197 +1,112 @@
-import { SignalResponse } from '../types/trading';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/card';
-import { Badge } from './ui/badge';
+import React from 'react';
+import type { SignalResponse } from '../types/trading';
 
 interface SignalDisplayProps {
+  // We keep this flexible: when there's no signal yet, it's null.
   signalData: SignalResponse | null;
 }
 
-export function SignalDisplay({ signalData }: SignalDisplayProps) {
+export const SignalDisplay: React.FC<SignalDisplayProps> = ({
+  signalData,
+}) => {
   if (!signalData) {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Your AI Signal</CardTitle>
-          <CardDescription>
-            Submit the form to generate a signal.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="pt-6">
-          <div className="flex flex-col items-center justify-center py-12">
-            <div className="text-6xl mb-4 text-muted-foreground">📊</div>
-            <p className="text-lg font-medium mb-2">No signal generated yet</p>
-            <p className="text-sm text-muted-foreground text-center">
-              Fill in the form to get your AI-powered trading signal.
-            </p>
-          </div>
-        </CardContent>
-      </Card>
+      <div className="border rounded-lg p-6 bg-card">
+        <h2 className="text-lg font-semibold mb-2">Signal preview</h2>
+        <p className="text-sm text-muted-foreground">
+          Fill in the form and generate a signal to see the details here.
+        </p>
+      </div>
     );
   }
 
-  const { signal, positionDetails } = signalData;
-
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }).format(value);
-  };
-
-  const formatCurrencyPrice = (value: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }).format(value);
-  };
-
-  const formatRatio = (value: number) => {
-    return value.toFixed(2);
-  };
-
-  const formatDateTime = () => {
-    return new Date().toLocaleString('en-US', {
-      month: '2-digit',
-      day: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      hour12: true,
-    });
-  };
+  // We assume SignalResponse has `signal` and `risk` objects.
+  const { signal, risk } = signalData as any;
 
   return (
-    <div className="space-y-4">
-      <Card>
-        <CardHeader>
-          <CardTitle>Your AI Signal</CardTitle>
-          <CardDescription>
-            Follow these levels for optimal trade execution.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {/* Signal Header */}
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h3 className="text-2xl font-bold">{signal.symbol}</h3>
-              <p className="text-sm text-muted-foreground">{formatDateTime()}</p>
-            </div>
-            <Badge variant={signal.direction === 'BUY' ? 'success' : 'destructive'} className="text-base px-4 py-2">
-              {signal.direction === 'BUY' ? '↑' : '↓'} {signal.direction}
-            </Badge>
-          </div>
+    <div className="border rounded-lg p-6 bg-card space-y-4">
+      <h2 className="text-lg font-semibold">Generated Signal</h2>
 
-          {/* Order Type */}
-          <div className="mb-4">
-            <p className="text-xs text-muted-foreground mb-1">MARKET ORDER</p>
-            <div>
-              <p className="text-xs text-muted-foreground mb-1">Entry Price</p>
-              <p className="text-3xl font-bold">{formatCurrencyPrice(signal.entry)}</p>
-            </div>
-          </div>
+      <div className="space-y-1 text-sm">
+        {signal?.symbol && (
+          <p>
+            <span className="font-medium">Symbol:</span> {signal.symbol}
+          </p>
+        )}
+        {signal?.side && (
+          <p>
+            <span className="font-medium">Side:</span>{' '}
+            {String(signal.side).toUpperCase()}
+          </p>
+        )}
+        {signal?.entryType && (
+          <p>
+            <span className="font-medium">Entry type:</span> {signal.entryType}
+          </p>
+        )}
+        {signal?.entryPrice !== undefined && (
+          <p>
+            <span className="font-medium">Entry price:</span>{' '}
+            {signal.entryPrice}
+          </p>
+        )}
+        {signal?.stopLoss !== undefined && (
+          <p>
+            <span className="font-medium">Stop loss:</span> {signal.stopLoss}
+          </p>
+        )}
+        {signal?.takeProfit1 !== undefined && (
+          <p>
+            <span className="font-medium">Take profit 1:</span>{' '}
+            {signal.takeProfit1}
+          </p>
+        )}
+        {signal?.takeProfit2 !== undefined && (
+          <p>
+            <span className="font-medium">Take profit 2:</span>{' '}
+            {signal.takeProfit2}
+          </p>
+        )}
+        {signal?.timeFrame && (
+          <p>
+            <span className="font-medium">Timeframe:</span> {signal.timeFrame}
+          </p>
+        )}
+      </div>
 
-          {/* Key Levels */}
-          <div className="grid grid-cols-3 gap-3">
-            <div className="p-4 rounded-lg border border-red-500/30 bg-red-500/10">
-              <div className="flex items-center gap-2 mb-2">
-                <span className="text-lg">〰️</span>
-                <p className="text-xs font-medium">Stop Loss</p>
-              </div>
-              <p className="text-lg font-bold">{formatCurrencyPrice(signal.stopLoss)}</p>
-            </div>
-            <div className="p-4 rounded-lg border border-green-500/30 bg-green-500/10">
-              <div className="flex items-center gap-2 mb-2">
-                <span className="text-lg">↑</span>
-                <p className="text-xs font-medium">Take Profit 1</p>
-              </div>
-              <p className="text-lg font-bold">{formatCurrencyPrice(signal.takeProfit1)}</p>
-            </div>
-            <div className="p-4 rounded-lg border border-green-500/30 bg-green-500/10">
-              <div className="flex items-center gap-2 mb-2">
-                <span className="text-lg">↑</span>
-                <p className="text-xs font-medium">Take Profit 2</p>
-              </div>
-              <p className="text-lg font-bold">{formatCurrencyPrice(signal.takeProfit2)}</p>
-            </div>
-          </div>
+      <div className="border-t pt-4 space-y-1 text-sm">
+        <h3 className="font-semibold">Risk / Position Sizing</h3>
+        {risk?.accountSize !== undefined && (
+          <p>
+            <span className="font-medium">Account size:</span>{' '}
+            {risk.accountSize}
+          </p>
+        )}
+        {risk?.tradeRiskPercent !== undefined && (
+          <p>
+            <span className="font-medium">Risk per trade:</span>{' '}
+            {risk.tradeRiskPercent}%{/* you can format further if you like */}
+          </p>
+        )}
+        {risk?.riskAmount !== undefined && (
+          <p>
+            <span className="font-medium">Risk amount:</span> {risk.riskAmount}
+          </p>
+        )}
+        {risk?.positionSize !== undefined && (
+          <p>
+            <span className="font-medium">Position size:</span>{' '}
+            {risk.positionSize}
+          </p>
+        )}
+      </div>
 
-          {/* Risk Management Note */}
-          <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-md flex items-start gap-2">
-            <span className="text-lg">ℹ️</span>
-            <p className="text-sm">
-              Risk Management: When trade hits TP1, move SL to entry.
-            </p>
-          </div>
-
-          {/* Recommended Lot Size */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">Recommended Lot Size</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-3xl font-bold mb-1">{positionDetails.recommendedLots.toFixed(2)}</p>
-              <p className="text-sm text-muted-foreground">{positionDetails.recommendedUnits.toFixed(4)} units</p>
-            </CardContent>
-          </Card>
-
-          {/* Position Details */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">Position Details</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <p className="text-xs text-muted-foreground mb-1">Account Size</p>
-                  <p className="text-base font-semibold">{formatCurrency(positionDetails.accountSize)}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground mb-1">Risk per Trade</p>
-                  <p className="text-base font-semibold">{positionDetails.riskPerTrade}%</p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground mb-1">Amount Risking</p>
-                  <p className="text-base font-semibold text-red-400">
-                    {formatCurrency(positionDetails.amountRisking)}
-                  </p>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4 pt-3 border-t">
-                <div>
-                  <p className="text-xs text-muted-foreground mb-1">Profit at TP1</p>
-                  <p className="text-base font-semibold text-green-400">
-                    {formatCurrency(positionDetails.profitAtTP1)}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground mb-1">Profit at TP2</p>
-                  <p className="text-base font-semibold text-green-400">
-                    {formatCurrency(positionDetails.profitAtTP2)}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground mb-1">Risk:Reward (TP1)</p>
-                  <p className="text-base font-semibold text-blue-400">
-                    1:{formatRatio(positionDetails.riskRewardTP1)}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground mb-1">Risk:Reward (TP2)</p>
-                  <p className="text-base font-semibold text-blue-400">
-                    1:{formatRatio(positionDetails.riskRewardTP2)}
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </CardContent>
-      </Card>
+      {signal?.comment && (
+        <div className="border-t pt-4 text-sm text-muted-foreground">
+          <p className="font-semibold mb-1">Comment / Notes</p>
+          <p>{signal.comment}</p>
+        </div>
+      )}
     </div>
   );
-}
-
+};
