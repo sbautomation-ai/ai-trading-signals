@@ -1,5 +1,5 @@
 // Vercel Function: /api/generate-signal
-// Uses OpenAI to generate an AI-powered trading signal based on:
+// Uses OpenAI (via fetch) to generate an AI-powered trading signal based on:
 // - symbol
 // - accountSize
 // - tradeRiskPercent
@@ -7,11 +7,9 @@
 // The function:
 // - Handles CORS (for localhost / GitHub Pages etc.)
 // - Accepts POST requests with JSON body: { symbol, accountSize, tradeRiskPercent }
-// - Calls OpenAI (gpt-4.1-mini) with a structured prompt
+// - Calls OpenAI's Chat Completions API (gpt-4.1-mini) with a structured prompt
 // - Returns JSON with the same shape your frontend already expects:
 //   { signal: { ... }, risk: { ... } }
-
-import OpenAI from 'openai';
 
 type SignalSide = 'buy' | 'sell';
 
@@ -74,7 +72,7 @@ export function OPTIONS() {
 // Main POST handler
 export async function POST(request: Request): Promise<Response> {
   try {
-    // Check API key
+    // 1) Check API key
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
       console.error('Missing OPENAI_API_KEY in environment');
@@ -87,13 +85,11 @@ export async function POST(request: Request): Promise<Response> {
       );
     }
 
-    const openai = new OpenAI({ apiKey });
-
-    const body: SignalRequestBody = await request.json();
+    // 2) Read and validate request body
+    const body: SignalRequestBody = await request.json().catch(() => ({}));
 
     const { symbol, accountSize, tradeRiskPercent } = body;
 
-    // Basic validation (keep it strict so we don't send garbage to OpenAI)
     if (!symbol || typeof symbol !== 'string' || !symbol.trim()) {
       return json({ error: 'symbol is required (string)' }, { status: 400 });
     }
@@ -122,11 +118,9 @@ export async function POST(request: Request): Promise<Response> {
     }
 
     const normalizedSymbol = symbol.trim().toUpperCase();
-
-    // We still compute the basic riskAmount ourselves, to keep it consistent.
     const riskAmount = (accountSize * tradeRiskPercent) / 100;
 
-    // Build a prompt that forces the model to output clean JSON
+    // 3) Build prompts
     const systemPrompt = `
 You are a professional trading signal generator for FX, indices, metals and crypto.
 Your job is to create short-term trading ideas based on the user's inputs.
@@ -176,17 +170,45 @@ Assume the user wants a short-term intraday or swing trade (H1 or H4) with a cle
 Follow the JSON structure exactly as described in the system instructions.
 `;
 
-    // Call OpenAI Chat Completions with JSON response format
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-4.1-mini',
-      response_format: { type: 'json_object' },
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt },
-      ],
-    });
+    // 4) Call OpenAI via fetch
+    const openaiResponse = await fetch(
+      'https://api.openai.com/v1/chat/completions',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model: 'gpt-4.1-mini',
+          response_format: { type: 'json_object' },
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt },
+          ],
+        }),
+      }
+    );
 
-    const content = completion.choices[0]?.message?.content;
+    if (!openaiResponse.ok) {
+      const errText = await openaiResponse.text();
+      console.error(
+        'OpenAI API error',
+        openaiResponse.status,
+        openaiResponse.statusText,
+        errText
+      );
+      return json(
+        {
+          error: `OpenAI API error (${openaiResponse.status} ${openaiResponse.statusText}). Check your API key, model name, or quota.`,
+        },
+        { status: 500 }
+      );
+    }
+
+    const completion: any = await openaiResponse.json();
+    const content = completion?.choices?.[0]?.message?.content;
+
     if (!content) {
       console.error('OpenAI returned no content', completion);
       return json(
@@ -195,6 +217,7 @@ Follow the JSON structure exactly as described in the system instructions.
       );
     }
 
+    // 5) Parse and normalise the AI JSON
     let parsed: any;
     try {
       parsed = JSON.parse(content);
@@ -206,15 +229,10 @@ Follow the JSON structure exactly as described in the system instructions.
       );
     }
 
-    // Basic shape checks and patching to ensure we conform to SignalResponseBody
     const signal: SignalInfo = {
       symbol: normalizedSymbol,
-      side:
-        parsed?.signal?.side === 'sell'
-          ? 'sell'
-          : 'buy', // default to 'buy' if weird
-      entryType:
-        parsed?.signal?.entryType === 'limit' ? 'limit' : 'market',
+      side: parsed?.signal?.side === 'sell' ? 'sell' : 'buy',
+      entryType: parsed?.signal?.entryType === 'limit' ? 'limit' : 'market',
       entryPrice: Number(parsed?.signal?.entryPrice) || 0,
       stopLoss: Number(parsed?.signal?.stopLoss) || 0,
       takeProfit1: Number(parsed?.signal?.takeProfit1) || 0,
@@ -225,21 +243,23 @@ Follow the JSON structure exactly as described in the system instructions.
         'AI-generated trading idea. Always do your own research.',
     };
 
-    // If AI gave nonsense prices, you might want to add more defensive checks here.
-    // For now we trust the model within reason.
-
     const aiRiskAmount = Number(parsed?.risk?.riskAmount);
     const risk: RiskInfo = {
       accountSize,
       tradeRiskPercent,
-      // Prefer our own riskAmount calculation to keep it consistent
-      riskAmount: Number.isFinite(aiRiskAmount) && aiRiskAmount > 0
-        ? aiRiskAmount
-        : Number(riskAmount.toFixed(2)),
+      riskAmount:
+        Number.isFinite(aiRiskAmount) && aiRiskAmount > 0
+          ? aiRiskAmount
+          : Number(riskAmount.toFixed(2)),
       positionSize:
         Number(parsed?.risk?.positionSize) > 0
           ? Number(parsed.risk.positionSize)
-          : Number((riskAmount / Math.max(Math.abs(signal.entryPrice - signal.stopLoss), 1)).toFixed(2)),
+          : Number(
+              (
+                riskAmount /
+                Math.max(Math.abs(signal.entryPrice - signal.stopLoss), 1)
+              ).toFixed(2)
+            ),
     };
 
     const responseBody: SignalResponseBody = {
@@ -248,10 +268,14 @@ Follow the JSON structure exactly as described in the system instructions.
     };
 
     return json(responseBody, { status: 200 });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error in /api/generate-signal:', error);
     return json(
-      { error: 'Internal error while generating signal' },
+      {
+        error:
+          'Internal error while generating signal.' +
+          (error?.message ? ` Details: ${error.message}` : ''),
+      },
       { status: 500 }
     );
   }
