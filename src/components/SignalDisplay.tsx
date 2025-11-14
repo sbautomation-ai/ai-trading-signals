@@ -10,11 +10,12 @@ import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 
 interface SignalDisplayProps {
-  // Matches how App.tsx calls this component: <SignalDisplay signalData={signalData} />
+  // Matches how App.tsx calls this component
   signalData: any | null;
+  onSaveToNotes?: (content: string) => void;
 }
 
-// Format a broker-friendly text version of the signal for copy/download
+// Format a broker-friendly text version of the signal for copy/download/notes
 function formatSignalText(data: any): string {
   if (!data || !data.signal || !data.risk) return '';
 
@@ -70,7 +71,7 @@ function formatNumber(value: unknown, decimals: number = 2): string {
   return num.toFixed(decimals);
 }
 
-export function SignalDisplay({ signalData }: SignalDisplayProps) {
+export function SignalDisplay({ signalData, onSaveToNotes }: SignalDisplayProps) {
   const [copyStatus, setCopyStatus] = useState<'idle' | 'copied' | 'error'>(
     'idle'
   );
@@ -113,6 +114,13 @@ export function SignalDisplay({ signalData }: SignalDisplayProps) {
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
+  };
+
+  const handleSaveToNotes = () => {
+    if (!hasSignal || !onSaveToNotes) return;
+    const text = formatSignalText(signalData);
+    if (!text) return;
+    onSaveToNotes(text);
   };
 
   if (!hasSignal) {
@@ -305,6 +313,16 @@ export function SignalDisplay({ signalData }: SignalDisplayProps) {
           >
             Download .txt
           </Button>
+          {onSaveToNotes && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleSaveToNotes}
+            >
+              Save to Notes
+            </Button>
+          )}
         </section>
       </CardContent>
     </Card>
