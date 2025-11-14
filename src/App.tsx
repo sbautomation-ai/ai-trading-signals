@@ -1,12 +1,68 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { SignalForm } from './components/SignalForm';
 import { SignalDisplay } from './components/SignalDisplay';
 import { SignalResponse, SignalRequest } from './types/trading';
 
+type Page = 'home' | 'signals' | 'calendar' | 'notes';
+
+interface Note {
+  id: string;
+  createdAt: string;
+  content: string;
+}
+
 function App() {
+  const [activePage, setActivePage] = useState<Page>('home');
+
   const [signalData, setSignalData] = useState<SignalResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Simple local notes state (trade diary) stored in localStorage
+  const [notes, setNotes] = useState<Note[]>([]);
+  const [noteDraft, setNoteDraft] = useState('');
+
+  // Load notes from localStorage on first load
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('trade-notes');
+      if (raw) {
+        const parsed = JSON.parse(raw) as Note[];
+        if (Array.isArray(parsed)) {
+          setNotes(parsed);
+        }
+      }
+    } catch (err) {
+      console.error('[Notes] Failed to load notes from localStorage', err);
+    }
+  }, []);
+
+  // Save notes to localStorage whenever they change
+  useEffect(() => {
+    try {
+      localStorage.setItem('trade-notes', JSON.stringify(notes));
+    } catch (err) {
+      console.error('[Notes] Failed to save notes to localStorage', err);
+    }
+  }, [notes]);
+
+  const handleAddNote = () => {
+    const trimmed = noteDraft.trim();
+    if (!trimmed) return;
+
+    const newNote: Note = {
+      id: Date.now().toString(),
+      createdAt: new Date().toISOString(),
+      content: trimmed,
+    };
+
+    setNotes((prev) => [newNote, ...prev]);
+    setNoteDraft('');
+  };
+
+  const handleDeleteNote = (id: string) => {
+    setNotes((prev) => prev.filter((note) => note.id !== id));
+  };
 
   const handleSubmit = async (
     symbol: string,
@@ -24,7 +80,7 @@ function App() {
         tradeRiskPercent,
       };
 
-      // Prefer a relative API URL in production/preview, but allow an explicit override for local dev
+      // Prefer an explicit API URL if provided, otherwise use relative path
       const apiUrlFromEnv = import.meta.env.VITE_API_URL?.toString().trim();
       const apiUrl =
         apiUrlFromEnv && apiUrlFromEnv.length > 0
@@ -60,9 +116,11 @@ function App() {
       }
 
       const data: SignalResponse = await response.json();
-      // Update symbol to show in original format
+      // Update symbol to show in original format (e.g. keep user’s casing)
       data.signal.symbol = originalSymbolFormat.toLowerCase();
       setSignalData(data);
+      // Automatically take the user to the signals page if they aren’t there
+      setActivePage('signals');
     } catch (err) {
       const errorMessage =
         err instanceof Error ? err.message : 'An error occurred';
@@ -71,7 +129,6 @@ function App() {
         message: errorMessage,
       });
 
-      // Provide more helpful error message if API URL might be wrong
       if (
         errorMessage.includes('Failed to fetch') ||
         errorMessage.includes('NetworkError')
@@ -88,73 +145,271 @@ function App() {
     }
   };
 
+  const renderNavButton = (page: Page, label: string) => {
+    const isActive = activePage === page;
+    return (
+      <button
+        key={page}
+        type="button"
+        onClick={() => setActivePage(page)}
+        className={`px-3 py-1.5 rounded-full text-sm border transition-colors ${
+          isActive
+            ? 'bg-primary text-primary-foreground border-primary'
+            : 'bg-background text-muted-foreground border-border hover:bg-muted hover:text-foreground'
+        }`}
+      >
+        {label}
+      </button>
+    );
+  };
+
+  const renderHomePage = () => (
+    <div className="max-w-5xl mx-auto space-y-10">
+      <section className="text-center space-y-4">
+        <h1 className="text-4xl md:text-5xl font-bold">
+          On-Demand Trading Signals
+        </h1>
+        <p className="text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto">
+          A simple workspace for traders: request AI-powered trade ideas, track
+          your economic calendar, and log your trades in one place.
+        </p>
+        <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-4">
+          <button
+            type="button"
+            onClick={() => setActivePage('signals')}
+            className="inline-flex items-center justify-center rounded-full px-6 py-2.5 text-sm font-medium bg-primary text-primary-foreground shadow-sm hover:opacity-90 transition"
+          >
+            🚀 Request Trade Signal
+          </button>
+          <p className="text-xs text-muted-foreground">
+            No signup. No noise. Just structured trade ideas.
+          </p>
+        </div>
+      </section>
+
+      <section className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="p-6 rounded-xl border bg-card flex flex-col gap-2">
+          <div className="text-3xl">⚡️</div>
+          <h3 className="font-semibold">On-Demand Signals</h3>
+          <p className="text-sm text-muted-foreground">
+            Generate a trade idea in seconds based on your symbol, account size
+            and risk profile.
+          </p>
+        </div>
+        <div className="p-6 rounded-xl border bg-card flex flex-col gap-2">
+          <div className="text-3xl">📅</div>
+          <h3 className="font-semibold">Economic Context</h3>
+          <p className="text-sm text-muted-foreground">
+            Keep an eye on key economic events so you don&apos;t get surprised
+            mid-trade.
+          </p>
+        </div>
+        <div className="p-6 rounded-xl border bg-card flex flex-col gap-2">
+          <div className="text-3xl">📝</div>
+          <h3 className="font-semibold">Trade Diary</h3>
+          <p className="text-sm text-muted-foreground">
+            Log your ideas and outcomes in a simple notes tab to improve over
+            time.
+          </p>
+        </div>
+      </section>
+
+      <section className="border rounded-xl p-6 bg-card space-y-3">
+        <h2 className="text-lg font-semibold">How it fits together</h2>
+        <ol className="list-decimal list-inside text-sm text-muted-foreground space-y-1.5">
+          <li>
+            Use <strong>Request Trade Signal</strong> to generate a structured
+            trading idea.
+          </li>
+          <li>
+            Check the <strong>Economic Calendar</strong> before entering to
+            avoid major event surprises.
+          </li>
+          <li>
+            Record your thinking and results in <strong>Notes</strong> so you
+            can review and improve.
+          </li>
+        </ol>
+      </section>
+    </div>
+  );
+
+  const renderSignalsPage = () => (
+    <div className="max-w-5xl mx-auto space-y-8">
+      <section className="text-center space-y-3">
+        <h1 className="text-3xl md:text-4xl font-bold">
+          Request Trade Signal
+        </h1>
+        <p className="text-sm md:text-base text-muted-foreground max-w-2xl mx-auto">
+          Enter your symbol, account size and risk per trade. We&apos;ll return
+          a structured idea with entry, stop loss, and take profit targets — all
+          tailored to your risk.
+        </p>
+      </section>
+
+      <section className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
+        <div>
+          <SignalForm onSubmit={handleSubmit} isLoading={isLoading} />
+          {error && (
+            <div className="mt-4 p-4 bg-red-500/10 border border-red-500/20 rounded-md">
+              <p className="text-sm text-red-400">{error}</p>
+            </div>
+          )}
+        </div>
+
+        <div>
+          <SignalDisplay signalData={signalData} />
+        </div>
+      </section>
+    </div>
+  );
+
+  const renderCalendarPage = () => (
+    <div className="max-w-4xl mx-auto space-y-6">
+      <section className="space-y-2">
+        <h1 className="text-3xl font-bold">Economic Calendar</h1>
+        <p className="text-sm text-muted-foreground max-w-2xl">
+          This is a simple placeholder for now. The goal is to give you a quick
+          glance at major events before you trade. Later we can plug in a live
+          calendar API here.
+        </p>
+      </section>
+
+      <section className="border rounded-xl bg-card p-6 space-y-4">
+        <h2 className="text-sm font-semibold tracking-wide text-muted-foreground">
+          Today&apos;s focus (example)
+        </h2>
+        <ul className="space-y-2 text-sm text-muted-foreground">
+          <li>🇺🇸 FOMC Statement – High impact</li>
+          <li>🇪🇺 ECB Press Conference – High impact</li>
+          <li>🇬🇧 CPI Release – Medium impact</li>
+        </ul>
+        <p className="text-xs text-muted-foreground pt-2">
+          For now, treat this as a reminder: always check a trusted economic
+          calendar (e.g. your broker, Forex Factory, etc.) before executing a
+          signal.
+        </p>
+      </section>
+    </div>
+  );
+
+  const renderNotesPage = () => (
+    <div className="max-w-4xl mx-auto space-y-6">
+      <section className="space-y-2">
+        <h1 className="text-3xl font-bold">Trade Notes</h1>
+        <p className="text-sm text-muted-foreground max-w-2xl">
+          Use this space as a simple trade diary: jot down your ideas, reasons
+          for entering or skipping trades, and what you learned. Notes stay on
+          this device using your browser&apos;s local storage.
+        </p>
+      </section>
+
+      <section className="border rounded-xl bg-card p-4 md:p-6 space-y-4">
+        <div className="space-y-2">
+          <label
+            htmlFor="note"
+            className="text-xs font-medium text-muted-foreground uppercase tracking-wide"
+          >
+            New Note
+          </label>
+          <textarea
+            id="note"
+            rows={4}
+            className="w-full rounded-lg border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
+            placeholder="Example: EURUSD short after FOMC, reasons, risk, and outcome..."
+            value={noteDraft}
+            onChange={(e) => setNoteDraft(e.target.value)}
+          />
+        </div>
+        <div className="flex justify-between items-center gap-2">
+          <button
+            type="button"
+            onClick={handleAddNote}
+            disabled={!noteDraft.trim()}
+            className="inline-flex items-center justify-center rounded-full px-4 py-2 text-xs font-medium bg-primary text-primary-foreground disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            Save note
+          </button>
+          <p className="text-[11px] text-muted-foreground">
+            Notes are stored locally in your browser (no cloud sync yet).
+          </p>
+        </div>
+      </section>
+
+      <section className="space-y-3">
+        <h2 className="text-sm font-semibold tracking-wide text-muted-foreground">
+          Saved Notes
+        </h2>
+        {notes.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            No notes yet. Start by writing how you approached your last trade.
+          </p>
+        ) : (
+          <div className="space-y-3">
+            {notes.map((note) => (
+              <div
+                key={note.id}
+                className="border rounded-lg bg-card p-3 md:p-4 space-y-2"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-[11px] text-muted-foreground">
+                    {new Date(note.createdAt).toLocaleString()}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteNote(note.id)}
+                    className="text-[11px] text-red-400 hover:text-red-300"
+                  >
+                    Delete
+                  </button>
+                </div>
+                <p className="text-sm whitespace-pre-wrap text-foreground">
+                  {note.content}
+                </p>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+    </div>
+  );
+
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col">
-      {/* Top Hero / Header */}
-      <div className="border-b">
-        <div className="container mx-auto px-4 py-12 md:py-16">
-          <div className="max-w-4xl mx-auto">
-            <div className="text-center mb-12">
-              <h1 className="text-4xl md:text-5xl font-bold mb-4">
-                On-Demand Trading Signals
-              </h1>
-              <p className="text-xl text-muted-foreground">
-                Get instant, AI-generated trading signals tailored to your
-                account size and risk tolerance. Professional-grade analysis
-                delivered in seconds.
-              </p>
-            </div>
-
-            {/* Feature Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
-              <div className="text-center p-6 rounded-lg border bg-card">
-                <div className="text-3xl mb-3">⚡️</div>
-                <h3 className="font-semibold mb-2">On-Demand Signals</h3>
-                <p className="text-sm text-muted-foreground">
-                  Get trading signals in seconds, not hours
-                </p>
-              </div>
-              <div className="text-center p-6 rounded-lg border bg-card">
-                <div className="text-3xl mb-3">📈</div>
-                <h3 className="font-semibold mb-2">Maximize Profits</h3>
-                <p className="text-sm text-muted-foreground">
-                  Optimize your trading strategy for better returns
-                </p>
-              </div>
-              <div className="text-center p-6 rounded-lg border bg-card">
-                <div className="text-3xl mb-3">🤖</div>
-                <h3 className="font-semibold mb-2">AI-Powered Analysis</h3>
-                <p className="text-sm text-muted-foreground">
-                  Advanced AI-driven insights based on your inputs
-                </p>
-              </div>
-            </div>
-
-            {/* Main content grid: Form + Signal */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
-              {/* Left: Form */}
-              <div>
-                <SignalForm onSubmit={handleSubmit} isLoading={isLoading} />
-                {error && (
-                  <div className="mt-4 p-4 bg-red-500/10 border border-red-500/20 rounded-md">
-                    <p className="text-sm text-red-400">{error}</p>
-                  </div>
-                )}
-              </div>
-
-              {/* Right: Signal Display */}
-              <div>
-                <SignalDisplay signalData={signalData} />
-              </div>
-            </div>
+      {/* Top Navigation */}
+      <header className="border-b bg-background/80 backdrop-blur">
+        <div className="container mx-auto px-4 py-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div className="flex items-center gap-2">
+            <span className="text-xl font-semibold tracking-tight">
+              On-Demand Signals
+            </span>
+            <span className="text-[11px] px-2 py-0.5 rounded-full border bg-muted text-muted-foreground">
+              Early preview
+            </span>
           </div>
+          <nav className="flex flex-wrap gap-2">
+            {renderNavButton('home', 'Home')}
+            {renderNavButton('signals', 'Request Trade Signal')}
+            {renderNavButton('calendar', 'Economic Calendar')}
+            {renderNavButton('notes', 'Notes')}
+          </nav>
         </div>
-      </div>
+      </header>
 
-      {/* Disclaimer Footer */}
-      <div className="border-t mt-12">
+      {/* Main content */}
+      <main className="flex-1">
+        <div className="container mx-auto px-4 py-8">
+          {activePage === 'home' && renderHomePage()}
+          {activePage === 'signals' && renderSignalsPage()}
+          {activePage === 'calendar' && renderCalendarPage()}
+          {activePage === 'notes' && renderNotesPage()}
+        </div>
+      </main>
+
+      {/* Disclaimer Footer (visible on all pages) */}
+      <footer className="border-t mt-8">
         <div className="container mx-auto px-4 py-6">
-          <p className="text-sm text-muted-foreground text-center max-w-4xl mx-auto">
+          <p className="text-xs text-muted-foreground text-center max-w-4xl mx-auto">
             Disclaimer: The signals provided are for educational purposes only
             and do not constitute financial advice. Trading involves risk, and
             you should only trade with money you can afford to lose. Past
@@ -163,7 +418,7 @@ function App() {
             making investment decisions.
           </p>
         </div>
-      </div>
+      </footer>
     </div>
   );
 }
