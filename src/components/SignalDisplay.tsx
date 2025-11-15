@@ -29,7 +29,7 @@ function formatSignalText(data: any): string {
     stopLoss,
     takeProfit1,
     takeProfit2,
-    timeFrame,
+    // timeFrame, // we now ignore whatever the backend sends
     comment,
   } = signal;
 
@@ -51,7 +51,8 @@ function formatSignalText(data: any): string {
     `Symbol       : ${symbol ?? '-'}`,
     `Side         : ${sideLabel}`,
     `Order Type   : ${entryTypeLabel}`,
-    `Timeframe    : ${timeFrame ?? '-'}`,
+    // Always show M15 here
+    'Timeframe    : M15',
     '',
     `Entry        : ${entryPrice ?? '-'}`,
     `Stop Loss    : ${stopLoss ?? '-'}`,
@@ -64,6 +65,10 @@ function formatSignalText(data: any): string {
     `Risk per Trade %  : ${tradeRiskPercent ?? '-'}`,
     `Risk Amount       : ${riskAmount ?? '-'}`,
     `Position Size     : ${positionSize ?? '-'}`,
+    '',
+    'MANAGEMENT RULE',
+    '----------------',
+    'When you hit TP1 move Stop loss to entry.',
     '',
     'NOTES',
     '-----',
@@ -204,7 +209,8 @@ export function SignalDisplay({ signalData, onSaveToNotes }: SignalDisplayProps)
               <p className="text-[11px] uppercase text-muted-foreground">
                 Timeframe
               </p>
-              <p className="font-medium">{signal?.timeFrame ?? 'H1'}</p>
+              {/* Always show M15 here */}
+              <p className="font-medium">M15</p>
             </div>
             <div className="space-y-0.5">
               <p className="text-[11px] uppercase text-muted-foreground">
@@ -289,6 +295,11 @@ export function SignalDisplay({ signalData, onSaveToNotes }: SignalDisplayProps)
               </p>
             </div>
           </div>
+          {/* New management rule under TP */}
+          <p className="mt-2 text-xs text-muted-foreground">
+            When you hit <span className="font-semibold">TP1</span>, move your{' '}
+            <span className="font-semibold">Stop loss to entry</span>.
+          </p>
         </section>
 
         {/* Notes */}
