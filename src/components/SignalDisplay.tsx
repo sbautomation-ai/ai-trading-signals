@@ -10,12 +10,13 @@ import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 
 interface SignalDisplayProps {
-  // Matches how App.tsx calls this component
+  // Main signal data coming from /api/generate-signal
   signalData: any | null;
+  // Optional: used when saving to the Notes page
   onSaveToNotes?: (content: string) => void;
 }
 
-// Format a broker-friendly text version of the signal for copy/download/notes
+// Helper: format a broker-friendly text version of the signal
 function formatSignalText(data: any): string {
   if (!data || !data.signal || !data.risk) return '';
 
@@ -31,7 +32,13 @@ function formatSignalText(data: any): string {
     timeFrame,
     comment,
   } = signal;
-  const { accountSize, tradeRiskPercent, riskAmount, positionSize } = risk;
+
+  const {
+    accountSize,
+    tradeRiskPercent,
+    riskAmount,
+    positionSize,
+  } = risk;
 
   const sideLabel =
     typeof side === 'string' ? side.toUpperCase() : String(side);
@@ -64,7 +71,7 @@ function formatSignalText(data: any): string {
   ].join('\n');
 }
 
-// Simple helper for safely formatting numbers
+// Helper: formatting numbers nicely for display
 function formatNumber(value: unknown, decimals: number = 2): string {
   const num = typeof value === 'number' ? value : Number(value);
   if (!Number.isFinite(num)) return '-';
@@ -135,8 +142,8 @@ export function SignalDisplay({ signalData, onSaveToNotes }: SignalDisplayProps)
         <CardContent>
           <p className="text-sm text-muted-foreground">
             Use the form on the left to request an AI-powered trading signal.
-            We&apos;ll show the trade setup, risk details, and targets as soon
-            as one is generated.
+            We&apos;ll show the trade setup, risk, and targets as soon as one is
+            generated.
           </p>
         </CardContent>
       </Card>
@@ -146,6 +153,10 @@ export function SignalDisplay({ signalData, onSaveToNotes }: SignalDisplayProps)
   const { signal, risk } = signalData;
   const side: string = (signal?.side ?? 'buy').toString().toUpperCase();
   const isBuy = side === 'BUY';
+
+  const explanationToShow =
+    signal?.comment ??
+    'AI-generated trading idea. Always validate levels and manage your own risk.';
 
   return (
     <Card>
@@ -285,9 +296,8 @@ export function SignalDisplay({ signalData, onSaveToNotes }: SignalDisplayProps)
           <h3 className="text-sm font-semibold tracking-wide text-muted-foreground">
             Notes
           </h3>
-          <p className="text-sm leading-relaxed text-muted-foreground">
-            {signal?.comment ??
-              'AI-generated trading idea. Always validate levels and manage your own risk.'}
+          <p className="text-sm leading-relaxed text-muted-foreground whitespace-pre-wrap">
+            {explanationToShow}
           </p>
         </section>
 
