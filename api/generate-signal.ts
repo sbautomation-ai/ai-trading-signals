@@ -1,467 +1,205 @@
-// Vercel Function: /api/generate-signal
-// Uses OpenAI (via fetch) to generate an AI-powered trading signal.
-// If OpenAI returns 429 (Too Many Requests) or the response is unusable,
-// we fall back to a simple rule-based signal so the app still works.
+// Vercel Node Function: /api/generate-signal
+// Generates a single AI-powered trading signal on the 15-minute timeframe (M15)
+// using OpenAI. Returns a { signal, risk } JSON object.
 //
-// Also includes basic logging of:
-// - Request count
-// - Fallback usage
-// - Errors (sanitized, no sensitive data)
+// Expected request body (JSON):
+// {
+//   "symbol": "XAUUSD",
+//   "accountSize": 10000,
+//   "tradeRiskPercent": 2
+// }
+//
+// Response body (JSON):
+// {
+//   "signal": { ... },
+//   "risk": { ... }
+// }
 
-type SignalSide = 'buy' | 'sell';
-
-interface SignalRequestBody {
+interface GenerateBody {
   symbol?: string;
   accountSize?: number;
   tradeRiskPercent?: number;
 }
 
-interface RiskInfo {
-  accountSize: number;
-  tradeRiskPercent: number;
-  riskAmount: number;
-  positionSize: number;
+function sendJson(res: any, status: number, data: unknown) {
+  res.status(status).json(data);
 }
 
-interface SignalInfo {
-  symbol: string;
-  side: SignalSide;
-  entryType: 'market' | 'limit';
-  entryPrice: number;
-  stopLoss: number;
-  takeProfit1: number;
-  takeProfit2: number;
-  timeFrame: string;
-  comment: string;
-}
+export default async function handler(req: any, res: any) {
+  // Allow calls from localhost:5173 and your Vercel frontends
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
-interface SignalResponseBody {
-  signal: SignalInfo;
-  risk: RiskInfo;
-}
-
-// CORS headers (so frontend on localhost or other domains can call this)
-const CORS_HEADERS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'POST,OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type',
-};
-
-// Simple counters – these reset when the function cold-starts,
-// but give you a feel for traffic in logs.
-let requestCount = 0;
-let errorCount = 0;
-let fallbackCount = 0;
-
-// Helper logging functions
-function logInfo(message: string, extra?: Record<string, unknown>) {
-  if (extra) {
-    console.log('[generate-signal]', message, extra);
-  } else {
-    console.log('[generate-signal]', message);
-  }
-}
-
-function logError(message: string, extra?: Record<string, unknown>) {
-  if (extra) {
-    console.error('[generate-signal]', message, extra);
-  } else {
-    console.error('[generate-signal]', message);
-  }
-}
-
-// Helper to return JSON with CORS headers
-function json(data: unknown, init?: ResponseInit): Response {
-  return new Response(JSON.stringify(data), {
-    status: init?.status ?? 200,
-    headers: {
-      'Content-Type': 'application/json',
-      ...CORS_HEADERS,
-    },
-  });
-}
-
-// Handle OPTIONS preflight requests
-export function OPTIONS() {
-  return new Response(null, {
-    status: 200,
-    headers: CORS_HEADERS,
-  });
-}
-
-// ---- Fallback signal generator (no AI, no external API) ----
-
-function buildFallbackSignal(
-  symbol: string,
-  accountSize: number,
-  tradeRiskPercent: number
-): SignalResponseBody {
-  const normalizedSymbol = symbol.trim().toUpperCase();
-
-  const riskAmount = (accountSize * tradeRiskPercent) / 100;
-
-  // Very rough base price heuristics just to make numbers look realistic.
-  let basePrice = 100;
-  if (normalizedSymbol.includes('XAU')) basePrice = 2300;
-  else if (normalizedSymbol.includes('XAG')) basePrice = 28;
-  else if (normalizedSymbol.includes('BTC')) basePrice = 70000;
-  else if (normalizedSymbol.includes('ETH')) basePrice = 3500;
-  else if (normalizedSymbol.includes('US30')) basePrice = 39000;
-  else if (normalizedSymbol.includes('US100')) basePrice = 18000;
-  else if (normalizedSymbol.includes('SPX') || normalizedSymbol.includes('US500'))
-    basePrice = 5200;
-  else if (normalizedSymbol.endsWith('JPY')) basePrice = 150;
-  else if (
-    normalizedSymbol.startsWith('EUR') ||
-    normalizedSymbol.startsWith('GBP') ||
-    normalizedSymbol.startsWith('AUD') ||
-    normalizedSymbol.startsWith('NZD') ||
-    normalizedSymbol.startsWith('USD')
-  )
-    basePrice = 1.1;
-
-  // Simple trend bias: odd hash → buy, even → sell
-  const hash = Array.from(normalizedSymbol).reduce(
-    (acc, c) => acc + c.charCodeAt(0),
-    0
-  );
-  const side: SignalSide = hash % 2 === 0 ? 'buy' : 'sell';
-
-  const slDistancePct = 0.01; // 1% of price
-  const entryPrice = basePrice;
-  const slDistance = basePrice * slDistancePct;
-
-  let stopLoss: number;
-  let takeProfit1: number;
-  let takeProfit2: number;
-
-  if (side === 'buy') {
-    stopLoss = entryPrice - slDistance;
-    takeProfit1 = entryPrice + slDistance * 2;
-    takeProfit2 = entryPrice + slDistance * 3;
-  } else {
-    stopLoss = entryPrice + slDistance;
-    takeProfit1 = entryPrice - slDistance * 2;
-    takeProfit2 = entryPrice - slDistance * 3;
+  if (req.method === 'OPTIONS') {
+    res.status(200).end();
+    return;
   }
 
-  const rawPositionSize =
-    slDistance > 0 ? riskAmount / slDistance : riskAmount;
-  const positionSize = Number(rawPositionSize.toFixed(2));
+  if (req.method !== 'POST') {
+    sendJson(res, 405, { error: 'Method not allowed. Use POST.' });
+    return;
+  }
 
-  const signal: SignalInfo = {
-    symbol: normalizedSymbol,
-    side,
-    entryType: 'market',
-    entryPrice: Number(entryPrice.toFixed(5)),
-    stopLoss: Number(stopLoss.toFixed(5)),
-    takeProfit1: Number(takeProfit1.toFixed(5)),
-    takeProfit2: Number(takeProfit2.toFixed(5)),
-    timeFrame: 'H1',
-    comment:
-      'Fallback signal generated because the AI quota was exceeded or unavailable. Levels are based on simple rule-based logic, not live market analysis. Always do your own research.',
-  };
-
-  const risk: RiskInfo = {
-    accountSize,
-    tradeRiskPercent,
-    riskAmount: Number(riskAmount.toFixed(2)),
-    positionSize,
-  };
-
-  return { signal, risk };
-}
-
-// ---- Main POST handler ----
-
-export async function POST(request: Request): Promise<Response> {
   try {
-    requestCount += 1;
+    const rawBody = req.body;
+    const body: GenerateBody =
+      typeof rawBody === 'string' ? JSON.parse(rawBody) : rawBody || {};
 
-    // 1) Check API key
-    const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) {
-      logError('Missing OPENAI_API_KEY in environment', { requestCount });
-      // Even if key is missing, we can still return a fallback signal if body is valid
-      let body: SignalRequestBody = {};
-      try {
-        body = (await request.json()) as SignalRequestBody;
-      } catch {
-        // ignore parse errors
-      }
-      const { symbol, accountSize, tradeRiskPercent } = body;
-      if (
-        symbol &&
-        typeof symbol === 'string' &&
-        typeof accountSize === 'number' &&
-        typeof tradeRiskPercent === 'number'
-      ) {
-        fallbackCount += 1;
-        logInfo('Using fallback due to missing API key', {
-          fallbackCount,
-          symbol,
-        });
-        const fallback = buildFallbackSignal(
-          symbol,
-          accountSize,
-          tradeRiskPercent
-        );
-        return json(fallback, { status: 200 });
-      }
+    const symbol = (body.symbol || '').toString().toUpperCase();
+    const accountSize = Number(body.accountSize);
+    const tradeRiskPercentRaw = Number(body.tradeRiskPercent);
 
-      return json(
-        {
-          error:
-            'Server misconfiguration: missing OpenAI API key and invalid request body.',
-        },
-        { status: 500 }
-      );
+    if (!symbol || !Number.isFinite(accountSize) || !Number.isFinite(tradeRiskPercentRaw)) {
+      sendJson(res, 400, {
+        error: 'Missing or invalid symbol, accountSize, or tradeRiskPercent.',
+      });
+      return;
     }
 
-    // 2) Read and validate request body
-    let body: SignalRequestBody = {};
-    try {
-      body = (await request.json()) as SignalRequestBody;
-    } catch {
-      // ignore parse errors, will be caught by validation below
+    // Clamp the risk to a sensible range (0.1% – 5%)
+    const tradeRiskPercent = Math.max(0.1, Math.min(tradeRiskPercentRaw, 5));
+
+    const openaiApiKey = process.env.OPENAI_API_KEY;
+    if (!openaiApiKey) {
+      sendJson(res, 500, {
+        error: 'OPENAI_API_KEY is not configured on the server.',
+      });
+      return;
     }
 
-    const { symbol, accountSize, tradeRiskPercent } = body;
+    const model = process.env.OPENAI_MODEL || 'gpt-4.1-mini';
 
-    if (!symbol || typeof symbol !== 'string' || !symbol.trim()) {
-      return json({ error: 'symbol is required (string)' }, { status: 400 });
-    }
-
-    if (
-      typeof accountSize !== 'number' ||
-      !Number.isFinite(accountSize) ||
-      accountSize <= 0
-    ) {
-      return json(
-        { error: 'accountSize must be a positive number' },
-        { status: 400 }
-      );
-    }
-
-    if (
-      typeof tradeRiskPercent !== 'number' ||
-      !Number.isFinite(tradeRiskPercent) ||
-      tradeRiskPercent <= 0 ||
-      tradeRiskPercent > 100
-    ) {
-      return json(
-        { error: 'tradeRiskPercent must be between 0 and 100' },
-        { status: 400 }
-      );
-    }
-
-    const normalizedSymbol = symbol.trim().toUpperCase();
-    const riskAmount = (accountSize * tradeRiskPercent) / 100;
-
-    logInfo('Incoming request', {
-      requestCount,
-      symbol: normalizedSymbol,
-      accountSize,
-      tradeRiskPercent,
-    });
-
-    // 3) Build prompts
+    // 🧠 System prompt: 15-minute intraday logic + guardrails
     const systemPrompt = `
-You are a professional trading signal generator for FX, indices, metals and crypto.
-Your job is to create short-term trading ideas based on the user's inputs.
+You are a cautious trading assistant generating INTRADAY trading ideas.
 
-CRITICAL RULES:
-- You MUST respond with a single valid JSON object only. No extra text, no explanations outside JSON.
-- The JSON structure MUST be:
+You MUST:
+- Work strictly on the 15-minute timeframe (M15).
+- Assume the user is looking for short-term trades (scalps / intraday swings), not multi-day positions.
+- Always include: side (buy/sell), entry type (market/limit), entry price, stop loss, TP1, TP2, timeframe, and a brief comment.
+- Set timeFrame to "M15" in the JSON.
+- Respect basic risk management:
+  - Use realistic stop-loss and take-profit distances for a 15-minute chart.
+  - Treat risk per trade above 3% as aggressive and mention that in the comment.
+  - NEVER suggest over-leverage, martingale, or adding to losing positions.
+- Emphasise that this is not financial advice and the user must manage their own risk.
+`;
+
+    // 🧠 User prompt: single signal + risk block, JSON shape our frontend expects
+    const userPrompt = `
+Generate ONE trading idea for the following:
+
+Symbol: ${symbol}
+Account size: ${accountSize}
+Risk per trade (% of account): ${tradeRiskPercent}
+
+You don't know the broker's contract size, so just output a reasonable positionSize number.
+Assume this is a CFD/FX-style product where positionSize can be any positive decimal.
+
+Return JSON ONLY in this exact structure:
 
 {
   "signal": {
-    "symbol": "<string, same as requested symbol>",
-    "side": "buy" | "sell",
-    "entryType": "market" | "limit",
-    "entryPrice": <number>,
-    "stopLoss": <number>,
-    "takeProfit1": <number>,
-    "takeProfit2": <number>,
-    "timeFrame": "<string, e.g. 'M15', 'H1', 'H4'>",
-    "comment": "<short explanation of the idea and key risks>"
+    "symbol": "XAUUSD",
+    "side": "buy",
+    "entryType": "market",
+    "entryPrice": 1234.56,
+    "stopLoss": 1230.00,
+    "takeProfit1": 1240.00,
+    "takeProfit2": 1245.00,
+    "timeFrame": "M15",
+    "comment": "Short explanation of the idea and risk..."
   },
   "risk": {
-    "accountSize": <number>,
-    "tradeRiskPercent": <number>,
-    "riskAmount": <number>,
-    "positionSize": <number>
+    "accountSize": 10000,
+    "tradeRiskPercent": 2,
+    "riskAmount": 200,
+    "positionSize": 1.0
   }
 }
 
-- All numeric fields must be numbers, not strings.
-- "riskAmount" MUST equal accountSize * (tradeRiskPercent / 100).
-- "positionSize" should be a sensible size given the symbol and stop-loss distance, rounded to 2 decimals.
-- Use realistic price levels for the instrument (do not use tiny or huge nonsense numbers).
-- stopLoss and takeProfit prices must make sense relative to entry and side:
-  - For a BUY: stopLoss < entryPrice < takeProfit1 < takeProfit2
-  - For a SELL: stopLoss > entryPrice > takeProfit1 > takeProfit2
+Rules:
+- All numeric fields must be numbers, NOT strings.
+- timeFrame MUST be "M15".
+- riskAmount = accountSize * (tradeRiskPercent / 100).
 `;
 
-    const userPrompt = `
-Generate ONE trading signal using the following inputs:
+    const completionRes = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${openaiApiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model,
+        temperature: 0.6,
+        response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ],
+      }),
+    });
 
-- Symbol: ${normalizedSymbol}
-- Account size: ${accountSize}
-- Risk per trade (%): ${tradeRiskPercent}
-
-Assume the user wants a short-term intraday or swing trade (H1 or H4) with a clear idea, proper stop loss, and two take-profit targets.
-
-Follow the JSON structure exactly as described in the system instructions.
-`;
-
-    // 4) Call OpenAI via fetch – using the CHEAPEST reasonable model: gpt-4.1-nano
-    const openaiResponse = await fetch(
-      'https://api.openai.com/v1/chat/completions',
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify({
-          model: 'gpt-4.1-nano',
-          response_format: { type: 'json_object' },
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userPrompt },
-          ],
-        }),
-      }
-    );
-
-    // 4a) If OpenAI is rate-limited (429), fall back to local logic
-    if (openaiResponse.status === 429) {
-      fallbackCount += 1;
-      logInfo('OpenAI returned 429 Too Many Requests - using fallback', {
-        fallbackCount,
-        symbol: normalizedSymbol,
+    if (!completionRes.ok) {
+      const errText = await completionRes.text().catch(() => '');
+      console.error('[generate-signal] OpenAI error', {
+        status: completionRes.status,
+        body: errText,
       });
-      const fallback = buildFallbackSignal(
-        normalizedSymbol,
-        accountSize,
-        tradeRiskPercent
-      );
-      return json(fallback, { status: 200 });
+      sendJson(res, 502, { error: 'OpenAI API error while generating signal.' });
+      return;
     }
 
-    // 4b) Any other non-OK response is treated as an error
-    if (!openaiResponse.ok) {
-      errorCount += 1;
-      const errText = await openaiResponse.text();
-      logError('OpenAI API error', {
-        status: openaiResponse.status,
-        statusText: openaiResponse.statusText,
-        errorCount,
-      });
-      // Don't log full errText if you are worried about size; here it's usually safe.
-      return json(
-        {
-          error: `OpenAI API error (${openaiResponse.status} ${openaiResponse.statusText}). Check your API key, model name, or quota.`,
-        },
-        { status: 500 }
-      );
+    const data = (await completionRes.json()) as any;
+    const content = data?.choices?.[0]?.message?.content;
+
+    if (!content || typeof content !== 'string') {
+      console.error('[generate-signal] Missing content in OpenAI response');
+      sendJson(res, 502, { error: 'Invalid response from OpenAI.' });
+      return;
     }
 
-    const completion: any = await openaiResponse.json();
-    const content = completion?.choices?.[0]?.message?.content;
-
-    if (!content) {
-      fallbackCount += 1;
-      logError('OpenAI returned no content, using fallback', {
-        fallbackCount,
-        symbol: normalizedSymbol,
-      });
-      const fallback = buildFallbackSignal(
-        normalizedSymbol,
-        accountSize,
-        tradeRiskPercent
-      );
-      return json(fallback, { status: 200 });
-    }
-
-    // 5) Parse and normalise the AI JSON
     let parsed: any;
     try {
       parsed = JSON.parse(content);
     } catch (err) {
-      fallbackCount += 1;
-      logError('Failed to parse OpenAI JSON, using fallback', {
-        fallbackCount,
-        symbol: normalizedSymbol,
+      console.error('[generate-signal] Failed to parse JSON from OpenAI', {
+        content,
       });
-      const fallback = buildFallbackSignal(
-        normalizedSymbol,
-        accountSize,
-        tradeRiskPercent
-      );
-      return json(fallback, { status: 200 });
+      sendJson(res, 502, {
+        error: 'Could not parse signal JSON from OpenAI.',
+      });
+      return;
     }
 
-    const signal: SignalInfo = {
-      symbol: normalizedSymbol,
-      side: parsed?.signal?.side === 'sell' ? 'sell' : 'buy',
-      entryType: parsed?.signal?.entryType === 'limit' ? 'limit' : 'market',
-      entryPrice: Number(parsed?.signal?.entryPrice) || 0,
-      stopLoss: Number(parsed?.signal?.stopLoss) || 0,
-      takeProfit1: Number(parsed?.signal?.takeProfit1) || 0,
-      takeProfit2: Number(parsed?.signal?.takeProfit2) || 0,
-      timeFrame: parsed?.signal?.timeFrame || 'H1',
-      comment:
-        parsed?.signal?.comment ||
-        'AI-generated trading idea. Always do your own research.',
-    };
+    const signal = parsed.signal || {};
+    const risk = parsed.risk || {};
 
-    const aiRiskAmount = Number(parsed?.risk?.riskAmount);
-    const risk: RiskInfo = {
-      accountSize,
-      tradeRiskPercent,
-      riskAmount:
-        Number.isFinite(aiRiskAmount) && aiRiskAmount > 0
-          ? aiRiskAmount
-          : Number(riskAmount.toFixed(2)),
-      positionSize:
-        Number(parsed?.risk?.positionSize) > 0
-          ? Number(parsed.risk.positionSize)
-          : Number(
-              (
-                riskAmount /
-                Math.max(Math.abs(signal.entryPrice - signal.stopLoss), 1)
-              ).toFixed(2)
-            ),
-    };
+    // ✅ Enforce M15 timeframe even if the model forgets
+    signal.timeFrame = 'M15';
 
-    const responseBody: SignalResponseBody = {
-      signal,
-      risk,
-    };
+    // ✅ Ensure core risk fields are present / numeric
+    risk.accountSize = Number.isFinite(Number(risk.accountSize))
+      ? Number(risk.accountSize)
+      : accountSize;
 
-    logInfo('Signal generated successfully', {
-      symbol: normalizedSymbol,
-      side: signal.side,
-      model: 'gpt-4.1-nano',
-    });
+    risk.tradeRiskPercent = Number.isFinite(Number(risk.tradeRiskPercent))
+      ? Number(risk.tradeRiskPercent)
+      : tradeRiskPercent;
 
-    return json(responseBody, { status: 200 });
+    risk.riskAmount =
+      Number(risk.riskAmount) ||
+      risk.accountSize * (risk.tradeRiskPercent / 100);
+
+    sendJson(res, 200, { signal, risk });
   } catch (error: any) {
-    errorCount += 1;
-    const message = error?.message ?? String(error);
-    logError('Unhandled error in /api/generate-signal', {
-      errorCount,
-      message,
+    console.error('[generate-signal] Unexpected error', {
+      message: error?.message ?? String(error),
     });
-    return json(
-      {
-        error:
-          'Internal error while generating signal.' +
-          (message ? ` Details: ${message}` : ''),
-      },
-      { status: 500 }
-    );
+    sendJson(res, 500, {
+      error: 'Internal error while generating signal.',
+    });
   }
 }
