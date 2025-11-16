@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import {
   Card,
   CardHeader,
@@ -51,7 +50,6 @@ function formatSignalText(data: any): string {
     `Symbol       : ${symbol ?? '-'}`,
     `Side         : ${sideLabel}`,
     `Order Type   : ${entryTypeLabel}`,
-    // Always show M15 here
     'Timeframe    : M15',
     '',
     `Entry        : ${entryPrice ?? '-'}`,
@@ -70,8 +68,8 @@ function formatSignalText(data: any): string {
     '----------------',
     'When you hit TP1 move Stop loss to entry.',
     '',
-    'NOTES',
-    '-----',
+    'TRADE IDEA',
+    '----------',
     comment ?? 'AI-generated idea. Always do your own research.',
   ].join('\n');
 }
@@ -84,49 +82,7 @@ function formatNumber(value: unknown, decimals: number = 2): string {
 }
 
 export function SignalDisplay({ signalData, onSaveToNotes }: SignalDisplayProps) {
-  const [copyStatus, setCopyStatus] = useState<'idle' | 'copied' | 'error'>(
-    'idle'
-  );
-
   const hasSignal = signalData && signalData.signal && signalData.risk;
-
-  const handleCopy = async () => {
-    if (!hasSignal) return;
-    try {
-      const text = formatSignalText(signalData);
-      if (!text) return;
-      await navigator.clipboard.writeText(text);
-      setCopyStatus('copied');
-      setTimeout(() => setCopyStatus('idle'), 2000);
-    } catch (err) {
-      console.error('Failed to copy signal:', err);
-      setCopyStatus('error');
-      setTimeout(() => setCopyStatus('idle'), 3000);
-    }
-  };
-
-  const handleDownloadText = () => {
-    if (!hasSignal) return;
-    const text = formatSignalText(signalData);
-    if (!text) return;
-
-    const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-
-    const a = document.createElement('a');
-    const symbol =
-      signalData.signal?.symbol &&
-      String(signalData.signal.symbol).trim().length > 0
-        ? String(signalData.signal.symbol).toUpperCase()
-        : 'signal';
-
-    a.href = url;
-    a.download = `${symbol}-signal.txt`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-  };
 
   const handleSaveToNotes = () => {
     if (!hasSignal || !onSaveToNotes) return;
@@ -176,7 +132,7 @@ export function SignalDisplay({ signalData, onSaveToNotes }: SignalDisplayProps)
           </p>
         </div>
 
-        {/* Row 2: symbol + side (BTCUSD BUY) slightly bigger */}
+        {/* Row 2: symbol + side (e.g. BTCUSD BUY) slightly bigger */}
         <div className="flex flex-wrap items-center gap-3 text-sm md:text-base">
           {signal?.symbol && (
             <Badge
@@ -218,7 +174,6 @@ export function SignalDisplay({ signalData, onSaveToNotes }: SignalDisplayProps)
               <p className="text-[11px] uppercase text-muted-foreground">
                 Timeframe
               </p>
-              {/* Always show M15 here */}
               <p className="font-medium">M15</p>
             </div>
             <div className="space-y-0.5">
@@ -226,7 +181,7 @@ export function SignalDisplay({ signalData, onSaveToNotes }: SignalDisplayProps)
                 Entry price
               </p>
               <p className="font-medium">
-                {formatNumber(signal?.entryPrice, 5)}
+                {`$${formatNumber(signal?.entryPrice, 2)}`}
               </p>
             </div>
             <div className="space-y-0.5">
@@ -251,7 +206,7 @@ export function SignalDisplay({ signalData, onSaveToNotes }: SignalDisplayProps)
                 Account size
               </p>
               <p className="font-medium">
-                {formatNumber(risk?.accountSize, 2)}
+                {`$${formatNumber(risk?.accountSize, 2)}`}
               </p>
             </div>
             <div className="space-y-0.5">
@@ -267,7 +222,7 @@ export function SignalDisplay({ signalData, onSaveToNotes }: SignalDisplayProps)
                 Risk amount
               </p>
               <p className="font-medium">
-                {formatNumber(risk?.riskAmount, 2)}
+                {`$${formatNumber(risk?.riskAmount, 2)}`}
               </p>
             </div>
           </div>
@@ -284,7 +239,7 @@ export function SignalDisplay({ signalData, onSaveToNotes }: SignalDisplayProps)
                 Stop loss
               </p>
               <p className="font-medium text-red-400">
-                {formatNumber(signal?.stopLoss, 5)}
+                {`$${formatNumber(signal?.stopLoss, 2)}`}
               </p>
             </div>
             <div className="space-y-0.5">
@@ -292,7 +247,7 @@ export function SignalDisplay({ signalData, onSaveToNotes }: SignalDisplayProps)
                 Take profit 1
               </p>
               <p className="font-medium text-emerald-400">
-                {formatNumber(signal?.takeProfit1, 5)}
+                {`$${formatNumber(signal?.takeProfit1, 2)}`}
               </p>
             </div>
             <div className="space-y-0.5">
@@ -300,49 +255,28 @@ export function SignalDisplay({ signalData, onSaveToNotes }: SignalDisplayProps)
                 Take profit 2
               </p>
               <p className="font-medium text-emerald-400">
-                {formatNumber(signal?.takeProfit2, 5)}
+                {`$${formatNumber(signal?.takeProfit2, 2)}`}
               </p>
             </div>
           </div>
-          {/* Management rule under TP */}
           <p className="mt-2 text-xs text-muted-foreground">
             When you hit <span className="font-semibold">TP1</span>, move your{' '}
             <span className="font-semibold">Stop loss to entry</span>.
           </p>
         </section>
 
-        {/* Notes */}
+        {/* Trade Idea */}
         <section className="space-y-1">
           <h3 className="text-sm font-semibold tracking-wide text-muted-foreground">
-            Notes
+            Trade Idea
           </h3>
           <p className="text-sm leading-relaxed text-muted-foreground whitespace-pre-wrap">
             {explanationToShow}
           </p>
         </section>
 
-        {/* Actions */}
+        {/* Actions: only Save to Notes */}
         <section className="flex flex-wrap gap-2 pt-2">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={handleCopy}
-          >
-            {copyStatus === 'copied'
-              ? 'Copied!'
-              : copyStatus === 'error'
-              ? 'Copy failed'
-              : 'Copy signal'}
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={handleDownloadText}
-          >
-            Download .txt
-          </Button>
           {onSaveToNotes && (
             <Button
               type="button"
