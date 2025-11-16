@@ -165,28 +165,37 @@ export function SignalDisplay({ signalData, onSaveToNotes }: SignalDisplayProps)
 
   return (
     <Card>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0">
-        <div>
-          <CardTitle>Signal Details</CardTitle>
-          <CardDescription>
+      <CardHeader className="space-y-4">
+        {/* Row 1: title + sentence on one line with a bit of spacing */}
+        <div className="flex flex-wrap items-baseline gap-3">
+          <CardTitle className="text-xl md:text-2xl">
+            Signal Details
+          </CardTitle>
+          <p className="text-sm text-muted-foreground">
             Review the trade setup, risk, and targets before you execute.
-          </CardDescription>
+          </p>
         </div>
-        <div className="flex items-center gap-2">
+
+        {/* Row 2: symbol + side (BTCUSD BUY) slightly bigger */}
+        <div className="flex flex-wrap items-center gap-3 text-sm md:text-base">
+          {signal?.symbol && (
+            <Badge
+              variant="secondary"
+              className="uppercase px-3 py-1 text-xs md:text-sm"
+            >
+              {signal.symbol}
+            </Badge>
+          )}
           <Badge
             className={
-              isBuy
-                ? 'border border-emerald-500/60 text-emerald-400 bg-emerald-500/10'
-                : 'border border-red-500/60 text-red-400 bg-red-500/10'
+              (isBuy
+                ? 'border border-emerald-500/60 text-emerald-300 bg-emerald-500/10'
+                : 'border border-red-500/60 text-red-300 bg-red-500/10') +
+              ' px-3 py-1 text-xs md:text-sm'
             }
           >
             {side === 'BUY' ? 'BUY' : 'SELL'}
           </Badge>
-          {signal?.symbol && (
-            <Badge variant="secondary" className="uppercase">
-              {signal.symbol}
-            </Badge>
-          )}
         </div>
       </CardHeader>
 
@@ -295,7 +304,7 @@ export function SignalDisplay({ signalData, onSaveToNotes }: SignalDisplayProps)
               </p>
             </div>
           </div>
-          {/* New management rule under TP */}
+          {/* Management rule under TP */}
           <p className="mt-2 text-xs text-muted-foreground">
             When you hit <span className="font-semibold">TP1</span>, move your{' '}
             <span className="font-semibold">Stop loss to entry</span>.
