@@ -189,11 +189,57 @@ export function SignalDisplay({ signalData, onSaveToNotes }: SignalDisplayProps)
                 Position size
               </p>
               <p className="font-medium">
-                {formatNumber(risk?.positionSize, 2)}
+                {formatNumber(risk?.positionSize, 2)} lots
               </p>
             </div>
           </div>
         </section>
+
+        {/* Market Indicators */}
+        {(signal?.rsiAtSignal != null || signal?.atrAtSignal != null) && (
+          <section className="space-y-1">
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-semibold tracking-wide text-muted-foreground">
+                Market Indicators
+              </h3>
+              <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-400">
+                <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                Live data · Twelve Data
+              </span>
+            </div>
+            <div className="grid grid-cols-3 gap-2 text-sm">
+              <div className="space-y-0.5">
+                <p className="text-[11px] uppercase text-muted-foreground">
+                  Current price
+                </p>
+                <p className="font-medium">
+                  {`$${formatNumber(signal?.currentPrice ?? signal?.entryPrice, 2)}`}
+                </p>
+              </div>
+              <div className="space-y-0.5">
+                <p className="text-[11px] uppercase text-muted-foreground">
+                  RSI (14) M15
+                </p>
+                <p className={`font-medium ${
+                  signal.rsiAtSignal < 35
+                    ? 'text-emerald-400'
+                    : signal.rsiAtSignal > 65
+                    ? 'text-red-400'
+                    : ''
+                }`}>
+                  {formatNumber(signal?.rsiAtSignal, 1)}
+                  {signal.rsiAtSignal < 35 ? ' ↑' : signal.rsiAtSignal > 65 ? ' ↓' : ''}
+                </p>
+              </div>
+              <div className="space-y-0.5">
+                <p className="text-[11px] uppercase text-muted-foreground">
+                  ATR (14) M15
+                </p>
+                <p className="font-medium">{formatNumber(signal?.atrAtSignal, 4)}</p>
+              </div>
+            </div>
+          </section>
+        )}
 
         {/* Risk */}
         <section className="space-y-1">
