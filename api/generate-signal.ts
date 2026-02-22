@@ -59,6 +59,7 @@ export default async function handler(req: any, res: any) {
 
     // Clamp the risk to a sensible range (0.1% – 5%)
     const tradeRiskPercent = Math.max(0.1, Math.min(tradeRiskPercentRaw, 5));
+    const riskWasClamped = tradeRiskPercent !== tradeRiskPercentRaw;
 
     const openaiApiKey = process.env.OPENAI_API_KEY;
     if (!openaiApiKey) {
@@ -193,7 +194,13 @@ Rules:
       Number(risk.riskAmount) ||
       risk.accountSize * (risk.tradeRiskPercent / 100);
 
-    sendJson(res, 200, { signal, risk });
+    sendJson(res, 200, {
+      signal,
+      risk,
+      ...(riskWasClamped && {
+        warning: `Your requested risk of ${tradeRiskPercentRaw}% was outside the allowed range (0.1%–5%) and has been adjusted to ${tradeRiskPercent}%.`,
+      }),
+    });
   } catch (error: any) {
     console.error('[generate-signal] Unexpected error', {
       message: error?.message ?? String(error),

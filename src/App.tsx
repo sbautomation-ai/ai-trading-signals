@@ -370,6 +370,11 @@ function SignalsPage({
               <p className="text-sm text-red-400">{error}</p>
             </div>
           )}
+          {signalData?.warning && (
+            <div className="mt-4 p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-md">
+              <p className="text-sm text-yellow-400">⚠️ {signalData.warning}</p>
+            </div>
+          )}
         </div>
 
         <div>

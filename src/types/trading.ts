@@ -24,6 +24,7 @@ export interface PositionDetails {
 export interface SignalResponse {
   signal: TradingSignal;
   positionDetails: PositionDetails;
+  warning?: string;
 }
 
 export interface SignalRequest {
